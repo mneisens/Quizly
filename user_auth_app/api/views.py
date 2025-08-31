@@ -14,7 +14,11 @@ from .serializers import UserRegistrationSerializer, UserSerializer
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def register_user(request):
-    serializer = UserRegistrationSerializer(data=request.data)
+    data = request.data.copy()
+    if 'confirmed_password' in data:
+        data['password2'] = data.pop('confirmed_password')
+    
+    serializer = UserRegistrationSerializer(data=data)
     if serializer.is_valid():
         user = serializer.save()
         return Response({
