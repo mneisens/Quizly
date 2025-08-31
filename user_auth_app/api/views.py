@@ -1,11 +1,13 @@
-from django.shortcuts import render
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
-from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.tokens import RefreshToken, AccessToken
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
+from django.views.decorators.csrf import csrf_exempt
 from .serializers import UserRegistrationSerializer, UserSerializer
 
 
@@ -53,15 +55,64 @@ def login_user(request):
 
 
 @api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@csrf_exempt
 def logout_user(request):
-    response = Response({
-        "detail": "Log-Out successfully! All Tokens will be deleted. Refresh token is now invalid."
-    }, status=status.HTTP_200_OK)
-    
-    response.delete_cookie('access_token')
-    response.delete_cookie('refresh_token')
-    
-    return response
+    try:
+        # Hole den aktuellen User
+        user = request.user
+        
+        # Versuche Tokens aus Cookies zu blacklisten
+        access_token = request.COOKIES.get('access_token')
+        if access_token:
+            try:
+                token = AccessToken(access_token)
+                jti = token.payload.get('jti')
+                if jti:
+                    BlacklistedToken.objects.get_or_create(
+                        token__jti=jti, 
+                        defaults={'token': token}
+                    )
+            except Exception as e:
+                print(f"Fehler beim Blacklisten des Access-Tokens aus Cookies: {e}")
+        
+        refresh_token = request.COOKIES.get('refresh_token')
+        if refresh_token:
+            try:
+                refresh = RefreshToken(refresh_token)
+                refresh.blacklist()
+            except Exception as e:
+                print(f"Fehler beim Blacklisten des Refresh-Tokens aus Cookies: {e}")
+        
+        # Versuche Token aus Authorization-Header zu blacklisten
+        auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+        if auth_header.startswith('Bearer '):
+            try:
+                token_string = auth_header.split(' ')[1]
+                token = AccessToken(token_string)
+                jti = token.payload.get('jti')
+                if jti:
+                    BlacklistedToken.objects.get_or_create(
+                        token__jti=jti, 
+                        defaults={'token': token}
+                    )
+            except Exception as e:
+                print(f"Fehler beim Blacklisten des Access-Tokens aus Header: {e}")
+        
+        response = Response({
+            "detail": "Log-Out successfully! All tokens have been invalidated."
+        }, status=status.HTTP_200_OK)
+        
+        # Lösche die Cookies
+        response.delete_cookie('access_token')
+        response.delete_cookie('refresh_token')
+        
+        return response
+        
+    except Exception as e:
+        return Response({
+            "detail": f"Fehler beim Logout: {str(e)}"
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['POST'])
