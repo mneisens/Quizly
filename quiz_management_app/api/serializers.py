@@ -7,8 +7,17 @@ class QuizSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Quiz
+        fields = ['id', 'title', 'description', 'created_at', 'updated_at', 'video_url', 'created_by']
+        read_only_fields = ['created_at', 'updated_at', 'created_by', 'id']
+
+
+class QuizDetailSerializer(serializers.ModelSerializer):
+    created_by = serializers.ReadOnlyField(source='created_by.username')
+    
+    class Meta:
+        model = Quiz
         fields = ['id', 'title', 'description', 'created_at', 'updated_at', 'video_url', 'questions', 'created_by']
-        read_only_fields = ['created_at', 'updated_at', 'created_by']
+        read_only_fields = ['created_at', 'updated_at', 'created_by', 'id']
 
 
 class CreateQuizSerializer(serializers.ModelSerializer):
@@ -34,4 +43,4 @@ class CreateQuizSerializer(serializers.ModelSerializer):
         return super().create(validated_data)
     
     def to_representation(self, instance):
-        return QuizSerializer(instance, context=self.context).data
+        return QuizDetailSerializer(instance, context=self.context).data
