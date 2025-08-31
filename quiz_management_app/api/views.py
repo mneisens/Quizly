@@ -8,3 +8,11 @@ from .serializers import QuizSerializer, CreateQuizSerializer
 class CreateQuizView(generics.CreateAPIView):
     serializer_class = CreateQuizSerializer
     permission_classes = [IsAuthenticated]
+
+
+class QuizListView(generics.ListAPIView):
+    serializer_class = QuizSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        return Quiz.objects.filter(created_by=self.request.user)
