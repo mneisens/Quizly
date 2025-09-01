@@ -17,7 +17,6 @@ class Quiz(models.Model):
 class Question(models.Model):
     quiz = models.ForeignKey(Quiz, related_name='questions', on_delete=models.CASCADE)
     question_title = models.CharField(max_length=500)
-    answer = models.CharField(max_length=200)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -27,7 +26,8 @@ class Question(models.Model):
 
 class QuestionOption(models.Model):
     question = models.ForeignKey(Question, related_name='question_options', on_delete=models.CASCADE)
-    text = models.CharField(max_length=200)
+    option_text = models.CharField(max_length=200)
+    is_correct = models.BooleanField(default=False)
 
     def __str__(self):
-        return self.text
+        return self.option_text
