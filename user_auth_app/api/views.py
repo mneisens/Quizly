@@ -3,7 +3,6 @@ from rest_framework.generics import CreateAPIView, GenericAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken, AccessToken
-from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
@@ -13,9 +12,6 @@ from .serializers import UserRegistrationSerializer, UserSerializer
 
 
 class UserRegistrationView(CreateAPIView):
-    """
-    View für die Benutzerregistrierung
-    """
     serializer_class = UserRegistrationSerializer
     permission_classes = [AllowAny]
     
@@ -34,9 +30,6 @@ class UserRegistrationView(CreateAPIView):
 
 
 class UserLoginView(GenericAPIView):
-    """
-    View für die Benutzeranmeldung
-    """
     permission_classes = [AllowAny]
     
     def post(self, request, *args, **kwargs):
@@ -59,20 +52,34 @@ class UserLoginView(GenericAPIView):
         
         response = Response({
             "detail": "Login successfully!",
-            "user": UserSerializer(user).data
+            "user": UserSerializer(user).data,
+            "access_token": str(refresh.access_token),  # Token auch in Response für Frontend
+            "refresh_token": str(refresh)
         }, status=status.HTTP_200_OK)
         
-        response.set_cookie('access_token', str(refresh.access_token), httponly=True, samesite='Lax')
-        response.set_cookie('refresh_token', str(refresh), httponly=True, samesite='Lax')
+        # Verbesserte Cookie-Einstellungen
+        response.set_cookie(
+            'access_token', 
+            str(refresh.access_token), 
+            httponly=True, 
+            samesite='Lax',
+            max_age=3600,  # 1 Stunde
+            secure=False   # Für Entwicklung auf False
+        )
+        response.set_cookie(
+            'refresh_token', 
+            str(refresh), 
+            httponly=True, 
+            samesite='Lax',
+            max_age=86400,  # 1 Tag
+            secure=False    # Für Entwicklung auf False
+        )
         
         return response
 
 
 @method_decorator(csrf_exempt, name='dispatch')
 class UserLogoutView(GenericAPIView):
-    """
-    View für die Benutzerabmeldung
-    """
     permission_classes = [IsAuthenticated]
     
     def post(self, request, *args, **kwargs):
@@ -88,16 +95,16 @@ class UserLogoutView(GenericAPIView):
                             token__jti=jti, 
                             defaults={'token': token}
                         )
-                except Exception as e:
-                    print(f"Fehler beim Blacklisten des Access-Tokens aus Cookies: {e}")
+                except Exception:
+                    pass
             
             refresh_token = request.COOKIES.get('refresh_token')
             if refresh_token:
                 try:
                     refresh = RefreshToken(refresh_token)
                     refresh.blacklist()
-                except Exception as e:
-                    print(f"Fehler beim Blacklisten des Refresh-Tokens aus Cookies: {e}")
+                except Exception:
+                    pass
             
             auth_header = request.META.get('HTTP_AUTHORIZATION', '')
             if auth_header.startswith('Bearer '):
@@ -110,8 +117,8 @@ class UserLogoutView(GenericAPIView):
                             token__jti=jti, 
                             defaults={'token': token}
                         )
-                except Exception as e:
-                    print(f"Fehler beim Blacklisten des Access-Tokens aus Header: {e}")
+                except Exception:
+                    pass
             
             response = Response({
                 "detail": "Log-Out successfully! All tokens have been invalidated."
@@ -128,10 +135,99 @@ class UserLogoutView(GenericAPIView):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+class TestAuthView(GenericAPIView):
+    permission_classes = [AllowAny]
+    
+    def get(self, request, *args, **kwargs):
+        """Einfache Test-View ohne Authentifizierung"""
+        return Response({
+            "message": "Test-View funktioniert!",
+            "method": request.method,
+            "cookies_count": len(request.COOKIES),
+            "has_access_token": 'access_token' in request.COOKIES,
+            "has_refresh_token": 'refresh_token' in request.COOKIES,
+        }, status=status.HTTP_200_OK)
+    
+    def post(self, request, *args, **kwargs):
+        """Test-POST ohne Authentifizierung"""
+        return Response({
+            "message": "POST funktioniert!",
+            "data_received": request.data,
+            "cookies": list(request.COOKIES.keys()),
+        }, status=status.HTTP_200_OK)
+
+
+class ProtectedTestView(GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request, *args, **kwargs):
+        """Geschützte View mit Authentifizierung"""
+        return Response({
+            "message": "Geschützte View funktioniert!",
+            "user": request.user.username,
+            "user_id": request.user.id,
+            "is_authenticated": request.user.is_authenticated,
+        }, status=status.HTTP_200_OK)
+
+
+class DebugAuthView(GenericAPIView):
+    permission_classes = [AllowAny]
+    
+    def get(self, request, *args, **kwargs):
+        """Debug-View für Authentifizierungsprobleme"""
+        cookies = request.COOKIES
+        headers = dict(request.META)
+        
+        # Filter sensitive headers
+        sensitive_headers = ['HTTP_AUTHORIZATION', 'HTTP_COOKIE']
+        filtered_headers = {k: v for k, v in headers.items() if k not in sensitive_headers}
+        
+        return Response({
+            "cookies": cookies,
+            "headers": filtered_headers,
+            "user_agent": request.META.get('HTTP_USER_AGENT'),
+            "origin": request.META.get('HTTP_ORIGIN'),
+            "referer": request.META.get('HTTP_REFERER'),
+            "method": request.method,
+            "path": request.path,
+        }, status=status.HTTP_200_OK)
+
+
+class TokenValidationView(GenericAPIView):
+    permission_classes = [AllowAny]
+    
+    def get(self, request, *args, **kwargs):
+        """Überprüft den aktuellen Authentifizierungsstatus"""
+        access_token = request.COOKIES.get('access_token')
+        auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+        
+        if auth_header.startswith('Bearer '):
+            access_token = auth_header.split(' ')[1]
+        
+        if not access_token:
+            return Response({
+                "authenticated": False,
+                "detail": "Kein Token gefunden"
+            }, status=status.HTTP_401_UNAUTHORIZED)
+        
+        try:
+            token = AccessToken(access_token)
+            user_id = token.payload.get('user_id')
+            user = User.objects.get(id=user_id)
+            
+            return Response({
+                "authenticated": True,
+                "user": UserSerializer(user).data,
+                "token_exp": token.payload.get('exp')
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({
+                "authenticated": False,
+                "detail": f"Token ungültig: {str(e)}"
+            }, status=status.HTTP_401_UNAUTHORIZED)
+
+
 class TokenRefreshView(GenericAPIView):
-    """
-    View für das Erneuern von Access-Tokens
-    """
     permission_classes = [AllowAny]
     
     def post(self, request, *args, **kwargs):
@@ -148,10 +244,17 @@ class TokenRefreshView(GenericAPIView):
             
             response = Response({
                 "detail": "Token refreshed",
-                "access": access_token
+                "access_token": access_token
             }, status=status.HTTP_200_OK)
             
-            response.set_cookie('access_token', access_token, httponly=True, samesite='Lax')
+            response.set_cookie(
+                'access_token', 
+                access_token, 
+                httponly=True, 
+                samesite='Lax',
+                max_age=3600,
+                secure=False
+            )
             
             return response
         except Exception as e:
