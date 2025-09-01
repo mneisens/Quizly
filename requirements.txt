@@ -7,6 +7,5 @@ djangorestframework_simplejwt==5.5.1
 PyJWT==2.10.1
 sqlparse==0.5.3
 yt-dlp==2025.07.21
-faster-whisper==0.10.0
+openai-whisper==20250625
 google-generativeai==0.8.3
-pydub==0.25.1
