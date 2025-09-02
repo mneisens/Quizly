@@ -1,46 +1,42 @@
 from rest_framework import serializers
-from ..models import Quiz
+from ..models import Quiz, Question, QuestionOption
+
+
+class QuestionOptionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = QuestionOption
+        fields = ['id', 'option_text', 'is_correct']
+
+
+class QuestionSerializer(serializers.ModelSerializer):
+    question_options = serializers.SerializerMethodField()
+    answer = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Question
+        fields = ['id', 'question_title', 'question_options', 'answer']
+    
+    def get_question_options(self, obj):
+        return [option.option_text for option in obj.question_options.all()]
+    
+    def get_answer(self, obj):
+        correct_option = obj.question_options.filter(is_correct=True).first()
+        return correct_option.option_text if correct_option else None
 
 
 class QuizSerializer(serializers.ModelSerializer):
-    created_by = serializers.ReadOnlyField(source='created_by.username')
-    
     class Meta:
         model = Quiz
-        fields = ['id', 'title', 'description', 'created_at', 'updated_at', 'video_url', 'created_by']
-        read_only_fields = ['created_at', 'updated_at', 'created_by', 'id']
+        fields = ['id', 'title', 'description', 'video_url', 'created_at']
 
 
 class QuizDetailSerializer(serializers.ModelSerializer):
-    created_by = serializers.ReadOnlyField(source='created_by.username')
+    questions = QuestionSerializer(many=True, read_only=True)
     
     class Meta:
         model = Quiz
-        fields = ['id', 'title', 'description', 'created_at', 'updated_at', 'video_url', 'questions', 'created_by']
-        read_only_fields = ['created_at', 'updated_at', 'created_by', 'id']
+        fields = ['id', 'title', 'description', 'video_url', 'created_at', 'questions']
 
 
-class CreateQuizSerializer(serializers.ModelSerializer):
-    url = serializers.URLField(write_only=True)
-    
-    class Meta:
-        model = Quiz
-        fields = ['url']
-    
-    def create(self, validated_data):
-        url = validated_data.pop('url')
-        
-        title = f"Quiz für Video: {url}"
-        description = f"Ein automatisch generiertes Quiz basierend auf dem Video: {url}"
-        
-        validated_data.update({
-            'title': title,
-            'description': description,
-            'video_url': url,
-            'created_by': self.context['request'].user
-        })
-        
-        return super().create(validated_data)
-    
-    def to_representation(self, instance):
-        return QuizDetailSerializer(instance, context=self.context).data
+class CreateQuizSerializer(serializers.Serializer):
+    youtube_url = serializers.URLField()

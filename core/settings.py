@@ -164,6 +164,8 @@ SIMPLE_JWT = {
     'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=1),
 }
 
+GEMINI_API_KEY = None 
+
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
@@ -171,12 +173,26 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:5001",
     "http://localhost:5501",
     "http://127.0.0.1:5501",
+    "http://localhost:5173",  
+    "http://127.0.0.1:5173",
+    "http://localhost:8080",  
+    "http://127.0.0.1:8080",
+    "http://localhost:8001", 
+    "http://127.0.0.1:8001",
+    "http://localhost:8000",  
+    "http://127.0.0.1:8000",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
 
 # Zusätzliche CORS-Einstellungen für Entwicklung
 CORS_ALLOW_ALL_ORIGINS = False  # Sicherheit: Nur erlaubte Origins
+
+# Erweiterte CORS-Einstellungen für bessere Kompatibilität
+CORS_EXPOSE_HEADERS = [
+    'content-type',
+    'authorization',
+]
 
 CORS_ALLOW_METHODS = [
     'DELETE',
@@ -197,4 +213,31 @@ CORS_ALLOW_HEADERS = [
     'user-agent',
     'x-csrftoken',
     'x-requested-with',
+    'cache-control',
+    'pragma',
+]
+
+# Session-Einstellungen für bessere Cookie-Unterstützung
+SESSION_COOKIE_SAMESITE = 'Lax'
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SECURE = False  # Für Entwicklung auf False, in Produktion auf True
+
+# CSRF-Einstellungen
+CSRF_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_HTTPONLY = False  # Muss False sein für JavaScript-Zugriff
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5001",
+    "http://127.0.0.1:5001",
+    "http://localhost:5501",
+    "http://127.0.0.1:5501",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
+    "http://localhost:8001",
+    "http://127.0.0.1:8001",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
 ]
