@@ -65,7 +65,7 @@ class QuizGenerationService:
             Transkript:
             {transcript}
             
-            Erstelle 5 Multiple-Choice-Fragen mit jeweils 4 Antwortoptionen (A, B, C, D).
+            Erstelle GENAU 10 Multiple-Choice-Fragen mit jeweils 4 Antwortoptionen (A, B, C, D).
             Nur eine Antwort sollte korrekt sein.
             
             WICHTIGE REGELN FÜR ANTWORTMÖGLICHKEITEN:
@@ -75,6 +75,8 @@ class QuizGenerationService:
             4. Die Antworten sollten verschiedene Aspekte des Videos abdecken
             5. Vermeide zu offensichtliche oder zu schwierige Fragen
             6. Erstelle realistische Ablenkungen basierend auf dem Video-Inhalt
+            7. Alle 10 Fragen müssen relevant zum Video-Inhalt sein
+            8. Jede Frage muss genau 4 Antwortmöglichkeiten haben
             
             BEISPIELE FÜR GUTE ANTWORTMÖGLICHKEITEN:
             - Wenn das Video über Zeitreisen spricht: ["Zeitreisen", "Raumfahrt", "Geschichte", "Fiktion"]
@@ -91,12 +93,20 @@ class QuizGenerationService:
                         "question_options": ["Option A", "Option B", "Option C", "Option D"],
                         "answer": "Option A"
                     }},
-                    ...
+                    {{
+                        "question_title": "Frage 2",
+                        "question_options": ["Option A", "Option B", "Option C", "Option D"],
+                        "answer": "Option B"
+                    }},
+                    ... (weitere 8 Fragen)
                 ]
             }}
             
-            WICHTIG: Alle Antwortmöglichkeiten müssen spezifisch zum Video-Inhalt passen!
-            Verwende Begriffe, Namen, Zahlen oder Fakten, die tatsächlich im Transkript erwähnt werden.
+            WICHTIG: 
+            - GENAU 10 Fragen erstellen
+            - Jede Frage muss genau 4 Antwortmöglichkeiten haben
+            - Alle Antwortmöglichkeiten müssen spezifisch zum Video-Inhalt passen!
+            - Verwende Begriffe, Namen, Zahlen oder Fakten, die tatsächlich im Transkript erwähnt werden.
             """
             
             response = model.generate_content(prompt)
@@ -106,105 +116,209 @@ class QuizGenerationService:
             raise Exception(f"Fehler bei der Quiz-Generierung: {str(e)}")
     
     def _generate_test_quiz(self, video_title, transcript):
-        words = transcript.split()[:20]
-        sample_text = " ".join(words)
+        # Fallback-Methode für den Fall, dass kein Gemini API-Key verfügbar ist
+        # Generiert 10 Fragen basierend auf dem Transkript
         
-        if "Zeitreisen" in video_title or "time travel" in video_title.lower():
-            theme_options = ["Zeitreisen", "Raumfahrt", "Geschichte", "Fiktion"]
-            video_type = "Wissenschaftsdokumentation"
-            content_sample = "Zeitreisen und ihre wissenschaftlichen Grundlagen"
-        elif "Zwerge" in video_title or "dwarf" in video_title.lower():
-            theme_options = ["Astronomie", "Sterne", "Physik", "Kosmologie"]
-            video_type = "Wissenschaftsdokumentation"
-            content_sample = "Weiße Zwerge und schwarze Zwerge im Universum"
-        elif "Menschheit" in video_title or "humanity" in video_title.lower():
-            theme_options = ["Menschheit", "Überleben", "Zukunft", "Evolution"]
-            video_type = "Wissenschaftsdokumentation"
-            content_sample = "Das Überleben der Menschheit im Universum"
-        elif "Tutorial" in video_title.lower() or "how to" in video_title.lower():
-            theme_options = ["Anleitung", "Lernen", "Technik", "Bildung"]
-            video_type = "Tutorial"
-            content_sample = "Schritt-für-Schritt-Anleitung"
-        elif "Gaming" in video_title.lower() or "game" in video_title.lower():
-            theme_options = ["Gaming", "Spiele", "Entertainment", "Freizeit"]
-            video_type = "Gaming-Video"
-            content_sample = "Spielvorstellung und Gameplay"
-        elif "Musik" in video_title.lower() or "song" in video_title.lower():
-            theme_options = ["Musik", "Kunst", "Kultur", "Entertainment"]
-            video_type = "Musikvideo"
-            content_sample = "Musikalische Darbietung"
-        elif "News" in video_title.lower() or "Nachrichten" in video_title:
-            theme_options = ["Nachrichten", "Aktualität", "Information", "Journalismus"]
-            video_type = "Nachrichten"
-            content_sample = "Aktuelle Ereignisse und Berichte"
+        # Extrahiere relevante Wörter aus dem Transkript
+        words = transcript.split()
+        word_freq = {}
+        for word in words:
+            word_lower = word.lower().strip('.,!?;:')
+            if len(word_lower) > 3 and word_lower not in ['das', 'die', 'der', 'und', 'ist', 'ein', 'eine', 'den', 'von', 'mit', 'für', 'auf', 'an', 'in', 'zu', 'bei', 'seit', 'aus', 'nach', 'über', 'unter', 'zwischen', 'durch', 'ohne', 'gegen', 'um', 'vor', 'hinter', 'neben', 'innerhalb', 'außerhalb']:
+                word_freq[word_lower] = word_freq.get(word_lower, 0) + 1
+        
+        # Sortiere nach Häufigkeit und wähle die relevantesten Wörter
+        sorted_words = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)
+        relevant_words = [word.title() for word, freq in sorted_words[:20]]
+        
+        # Erstelle 10 Fragen basierend auf dem Video-Inhalt
+        questions = []
+        
+        # Frage 1: Hauptthema
+        if len(relevant_words) >= 4:
+            theme_options = [relevant_words[0], relevant_words[1], relevant_words[2], "Anderes Thema"]
         else:
-            common_words = [word.lower() for word in transcript.split() if len(word) > 3]
-            word_freq = {}
-            for word in common_words:
-                word_freq[word] = word_freq.get(word, 0) + 1
-            
-            sorted_words = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)
-            relevant_words = [word for word, freq in sorted_words[:10] if word not in ['das', 'die', 'der', 'und', 'ist', 'ein', 'eine', 'den', 'von', 'mit', 'für', 'auf', 'an', 'in', 'zu', 'bei', 'seit', 'aus', 'nach', 'über', 'unter', 'zwischen', 'durch', 'ohne', 'gegen', 'um', 'vor', 'hinter', 'neben', 'innerhalb', 'außerhalb']]
-            
-            if len(relevant_words) >= 3:
-                theme_options = [relevant_words[0].title(), relevant_words[1].title(), relevant_words[2].title(), "Anderes Thema"]
-            else:
-                theme_options = ["Wissenschaft", "Technologie", "Bildung", "Forschung"]
-            
-            video_type = "Dokumentation"
-            content_sample = sample_text[:50] + "..."
+            theme_options = ["Hauptthema", "Nebenthema", "Unterthema", "Anderes"]
+        
+        questions.append({
+            "question_title": f"Was ist das Hauptthema des Videos '{video_title}'?",
+            "question_options": theme_options,
+            "answer": theme_options[0]
+        })
+        
+        # Frage 2: Anzahl Wörter
+        word_count = len(transcript.split())
+        questions.append({
+            "question_title": "Wie viele Wörter enthält das Transkript?",
+            "question_options": [
+                str(word_count),
+                str(word_count + 50),
+                str(word_count - 50), 
+                str(word_count + 100)
+            ],
+            "answer": str(word_count)
+        })
+        
+        # Frage 3: Video-Typ
+        video_type = self._determine_video_type(video_title, transcript)
+        questions.append({
+            "question_title": "Welche Art von Video ist das?",
+            "question_options": [
+                video_type,
+                "Entertainment",
+                "Nachrichten",
+                "Werbung"
+            ],
+            "answer": video_type
+        })
+        
+        # Frage 4: Transkript-Länge
+        char_count = len(transcript)
+        questions.append({
+            "question_title": "Wie lang ist das Transkript?",
+            "question_options": [
+                f"{char_count} Zeichen",
+                f"{char_count + 1000} Zeichen",
+                f"{char_count - 1000} Zeichen",
+                f"{char_count + 500} Zeichen"
+            ],
+            "answer": f"{char_count} Zeichen"
+        })
+        
+        # Frage 5: Häufigstes Wort
+        if relevant_words:
+            most_common = relevant_words[0]
+            questions.append({
+                "question_title": "Welches Wort kommt im Transkript am häufigsten vor?",
+                "question_options": [
+                    most_common,
+                    relevant_words[1] if len(relevant_words) > 1 else "Wort B",
+                    relevant_words[2] if len(relevant_words) > 2 else "Wort C",
+                    relevant_words[3] if len(relevant_words) > 3 else "Wort D"
+                ],
+                "answer": most_common
+            })
+        else:
+            questions.append({
+                "question_title": "Wie viele verschiedene Wörter enthält das Transkript?",
+                "question_options": [
+                    str(len(set(words))),
+                    str(len(set(words)) + 100),
+                    str(len(set(words)) - 100),
+                    str(len(set(words)) + 200)
+                ],
+                "answer": str(len(set(words)))
+            })
+        
+        # Frage 6: Video-Dauer (geschätzt)
+        estimated_duration = len(words) // 150  # Geschätzte Wörter pro Minute
+        questions.append({
+            "question_title": "Wie lang ist das Video ungefähr (basierend auf dem Transkript)?",
+            "question_options": [
+                f"{estimated_duration} Minuten",
+                f"{estimated_duration + 2} Minuten",
+                f"{estimated_duration - 2} Minuten",
+                f"{estimated_duration + 5} Minuten"
+            ],
+            "answer": f"{estimated_duration} Minuten"
+        })
+        
+        # Frage 7: Sprache
+        german_words = len([w for w in words if any(c in w for c in 'äöüß')])
+        if german_words > len(words) * 0.1:
+            language = "Deutsch"
+        else:
+            language = "Englisch"
+        
+        questions.append({
+            "question_title": "In welcher Sprache ist das Video hauptsächlich?",
+            "question_options": [
+                language,
+                "Spanisch" if language != "Spanisch" else "Französisch",
+                "Französisch" if language != "Französisch" else "Italienisch",
+                "Italienisch" if language != "Italienisch" else "Deutsch"
+            ],
+            "answer": language
+        })
+        
+        # Frage 8: Komplexität
+        avg_word_length = sum(len(word) for word in words) / len(words) if words else 0
+        if avg_word_length > 8:
+            complexity = "Komplex"
+        elif avg_word_length > 6:
+            complexity = "Mittel"
+        else:
+            complexity = "Einfach"
+        
+        questions.append({
+            "question_title": "Wie komplex ist die Sprache im Video?",
+            "question_options": [
+                complexity,
+                "Sehr einfach",
+                "Mittel",
+                "Sehr komplex"
+            ],
+            "answer": complexity
+        })
+        
+        # Frage 9: Themenvielfalt
+        unique_topics = len(set(word.lower() for word in words if len(word) > 5))
+        if unique_topics > 100:
+            variety = "Hoch"
+        elif unique_topics > 50:
+            variety = "Mittel"
+        else:
+            variety = "Niedrig"
+        
+        questions.append({
+            "question_title": "Wie vielfältig sind die Themen im Video?",
+            "question_options": [
+                variety,
+                "Sehr niedrig",
+                "Mittel",
+                "Sehr hoch"
+            ],
+            "answer": variety
+        })
+        
+        # Frage 10: Zusammenfassung
+        sample_text = transcript[:100] + "..." if len(transcript) > 100 else transcript
+        questions.append({
+            "question_title": "Was wird im Video hauptsächlich besprochen?",
+            "question_options": [
+                sample_text,
+                "Ein anderes Thema",
+                "Nichts Relevantes",
+                "Etwas anderes"
+            ],
+            "answer": sample_text
+        })
         
         return {
             "title": f"Quiz: {video_title}",
             "description": f"Ein Quiz basierend auf dem Video '{video_title}'",
-            "questions": [
-                {
-                    "question_title": f"Was ist das Hauptthema des Videos '{video_title}'?",
-                    "question_options": theme_options,
-                    "answer": theme_options[0]
-                },
-                {
-                    "question_title": "Wie viele Wörter enthält das Transkript?",
-                    "question_options": [
-                        f"{len(transcript.split())}",
-                        f"{len(transcript.split()) + 50}",
-                        f"{len(transcript.split()) - 50}", 
-                        f"{len(transcript.split()) + 100}"
-                    ],
-                    "answer": f"{len(transcript.split())}"
-                },
-                {
-                    "question_title": "Welche Art von Video ist das?",
-                    "question_options": [
-                        video_type,
-                        "Entertainment",
-                        "Nachrichten",
-                        "Werbung"
-                    ],
-                    "answer": video_type
-                },
-                {
-                    "question_title": "Was wird im Video hauptsächlich besprochen?",
-                    "question_options": [
-                        content_sample,
-                        "Ein anderes Thema",
-                        "Nichts Relevantes",
-                        "Etwas anderes"
-                    ],
-                    "answer": content_sample
-                },
-                {
-                    "question_title": "Wie lang ist das Transkript?",
-                    "question_options": [
-                        f"{len(transcript)} Zeichen",
-                        f"{len(transcript) + 1000} Zeichen",
-                        f"{len(transcript) - 1000} Zeichen",
-                        f"{len(transcript) + 500} Zeichen"
-                    ],
-                    "answer": f"{len(transcript)} Zeichen"
-                }
-            ]
+            "questions": questions
         }
+    
+    def _determine_video_type(self, video_title, transcript):
+        """Bestimmt den Typ des Videos basierend auf Titel und Transkript"""
+        title_lower = video_title.lower()
+        transcript_lower = transcript.lower()
+        
+        if any(word in title_lower for word in ['tutorial', 'how to', 'anleitung', 'lernen']):
+            return "Tutorial"
+        elif any(word in title_lower for word in ['gaming', 'game', 'spiel', 'playthrough']):
+            return "Gaming"
+        elif any(word in title_lower for word in ['musik', 'song', 'music', 'lied']):
+            return "Musikvideo"
+        elif any(word in title_lower for word in ['news', 'nachrichten', 'bericht', 'report']):
+            return "Nachrichten"
+        elif any(word in title_lower for word in ['wissenschaft', 'science', 'forschung', 'research']):
+            return "Wissenschaftsdokumentation"
+        elif any(word in title_lower for word in ['comedy', 'humor', 'witzig', 'lustig']):
+            return "Comedy"
+        else:
+            return "Dokumentation"
     
     def _extract_json_from_response(self, response_text):
         try:
