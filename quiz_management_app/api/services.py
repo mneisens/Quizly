@@ -19,35 +19,165 @@ class QuizGenerationService:
     
     def _download_youtube_audio(self, youtube_url, temp_dir):
         try:
+            print(f"DEBUG: Starte Download für URL: {youtube_url}")
+            
+            available_formats = self._get_available_formats(youtube_url)
+            print(f"DEBUG: Verfügbare Audio-Formate: {len(available_formats)}")
+            
+            format_choices = [
+                'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best',
+                'bestaudio',
+                'worstaudio',
+            ]
+            
+            for format_choice in format_choices:
+                try:
+                    print(f"DEBUG: Versuche Format: {format_choice}")
+                    ydl_opts = {
+                        'format': format_choice,
+                        'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
+                        'postprocessors': [{
+                            'key': 'FFmpegExtractAudio',
+                            'preferredcodec': 'mp3',
+                            'preferredquality': '192',
+                        }],
+                        'noplaylist': True,
+                        'extract_flat': False,
+                        'ignoreerrors': True,
+                    }
+                    
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        info = ydl.extract_info(youtube_url, download=True)
+                        video_title = info.get('title', 'Unknown Video')
+
+                    audio_files = []
+                    for file in os.listdir(temp_dir):
+                        if file.endswith(('.mp3', '.m4a', '.webm', '.ogg', '.wav')):
+                            audio_files.append(file)
+                    
+                    if audio_files:
+                        audio_path = os.path.join(temp_dir, audio_files[0])
+                        print(f"DEBUG: Erfolgreich heruntergeladen: {audio_files[0]}")
+                        return audio_path, video_title
+                        
+                except Exception as e:
+                    print(f"DEBUG: Format {format_choice} fehlgeschlagen: {str(e)}")
+                    continue
+            
+            return self._download_without_conversion(youtube_url, temp_dir)
+                
+        except Exception as e:
+            print(f"DEBUG: Alle Download-Versuche fehlgeschlagen: {str(e)}")
+            return self._download_with_fallback(youtube_url, temp_dir)
+    
+    def _download_without_conversion(self, youtube_url, temp_dir):
+        """Download ohne Audio-Konvertierung"""
+        try:
             ydl_opts = {
-                'format': 'bestaudio/best',
+                'format': 'bestaudio',
                 'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
-                'postprocessors': [{
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'mp3',
-                    'preferredquality': '192',
-                }],
+                'noplaylist': True,
             }
             
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(youtube_url, download=True)
                 video_title = info.get('title', 'Unknown Video')
             
-            mp3_files = [f for f in os.listdir(temp_dir) if f.endswith('.mp3')]
-            if mp3_files:
-                mp3_path = os.path.join(temp_dir, mp3_files[0])
-                return mp3_path, video_title
-            else:
-                raise Exception("MP3-Datei nicht gefunden")
+            for file in os.listdir(temp_dir):
+                if not file.endswith('.part'):  
+                    file_path = os.path.join(temp_dir, file)
+                    return file_path, video_title
+            
+            raise Exception("Keine Audio-Datei gefunden")
+            
+        except Exception as e:
+            raise Exception(f"Download ohne Konvertierung fehlgeschlagen: {str(e)}")
+    
+    def _download_with_fallback(self, youtube_url, temp_dir):
+        """Fallback-Download mit verschiedenen Formaten"""
+        fallback_formats = [
+            'worstaudio',  
+            'best[height<=480]',  
+            'best',  
+        ]
+        
+        for format_choice in fallback_formats:
+            try:
+                print(f"DEBUG: Versuche Format: {format_choice}")
+                ydl_opts = {
+                    'format': format_choice,
+                    'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
+                    'noplaylist': True,
+                    'ignoreerrors': True,
+                }
+                
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(youtube_url, download=True)
+                    video_title = info.get('title', 'Unknown Video')
+                
+                # Suche nach heruntergeladenen Dateien
+                for file in os.listdir(temp_dir):
+                    if not file.endswith('.part'):
+                        file_path = os.path.join(temp_dir, file)
+                        print(f"DEBUG: Erfolgreich heruntergeladen: {file}")
+                        return file_path, video_title
+                        
+            except Exception as e:
+                print(f"DEBUG: Format {format_choice} fehlgeschlagen: {str(e)}")
+                continue
+        
+        raise Exception("Alle Download-Versuche fehlgeschlagen")
+    
+    def _get_available_formats(self, youtube_url):
+        """Hilfsmethode um verfügbare Formate zu prüfen"""
+        try:
+            ydl_opts = {
+                'quiet': True,
+                'no_warnings': True,
+            }
+            
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(youtube_url, download=False)
+                formats = info.get('formats', [])
+                
+                audio_formats = []
+                for fmt in formats:
+                    if fmt.get('acodec') != 'none':  # Hat Audio
+                        audio_formats.append({
+                            'format_id': fmt.get('format_id'),
+                            'ext': fmt.get('ext'),
+                            'acodec': fmt.get('acodec'),
+                            'quality': fmt.get('quality'),
+                        })
+                
+                return audio_formats
                 
         except Exception as e:
-            raise Exception(f"Fehler beim Herunterladen: {str(e)}")
+            print(f"DEBUG: Fehler beim Abrufen der Formate: {str(e)}")
+            return []
     
     def _transcribe_audio(self, audio_path):
         try:
+            print(f"DEBUG: Transkribiere Audio-Datei: {audio_path}")
+            print(f"DEBUG: Datei-Format: {os.path.splitext(audio_path)[1]}")
+            
+            if not os.path.exists(audio_path):
+                raise Exception(f"Audio-Datei nicht gefunden: {audio_path}")
+            
+            file_size = os.path.getsize(audio_path)
+            print(f"DEBUG: Dateigröße: {file_size} Bytes")
+            
+            if file_size == 0:
+                raise Exception("Audio-Datei ist leer")
+            
             result = self.whisper_model.transcribe(audio_path)
-            return result["text"]
+            transcript = result["text"]
+            
+            print(f"DEBUG: Transkript-Länge: {len(transcript)} Zeichen")
+            return transcript
+            
         except Exception as e:
+            print(f"DEBUG: Transkriptions-Fehler: {str(e)}")
             raise Exception(f"Fehler bei der Transkription: {str(e)}")
     
     def _generate_quiz_with_gemini(self, video_title, transcript):
@@ -110,194 +240,214 @@ class QuizGenerationService:
             """
             
             response = model.generate_content(prompt)
-            return self._extract_json_from_response(response.text)
+            quiz_data = self._extract_json_from_response(response.text)
+            if len(quiz_data.get('questions', [])) != 10:
+                raise Exception(f"Gemini API hat {len(quiz_data.get('questions', []))} Fragen generiert, aber 10 sind erforderlich!")
+            
+            return quiz_data
             
         except Exception as e:
             raise Exception(f"Fehler bei der Quiz-Generierung: {str(e)}")
     
     def _generate_test_quiz(self, video_title, transcript):
-        # Fallback-Methode für den Fall, dass kein Gemini API-Key verfügbar ist
-        # Generiert 10 Fragen basierend auf dem Transkript
+        sentences = self._split_into_sentences(transcript)
+        key_terms = self._extract_key_terms(transcript)
+        facts = self._extract_facts(sentences)
         
-        # Extrahiere relevante Wörter aus dem Transkript
-        words = transcript.split()
-        word_freq = {}
-        for word in words:
-            word_lower = word.lower().strip('.,!?;:')
-            if len(word_lower) > 3 and word_lower not in ['das', 'die', 'der', 'und', 'ist', 'ein', 'eine', 'den', 'von', 'mit', 'für', 'auf', 'an', 'in', 'zu', 'bei', 'seit', 'aus', 'nach', 'über', 'unter', 'zwischen', 'durch', 'ohne', 'gegen', 'um', 'vor', 'hinter', 'neben', 'innerhalb', 'außerhalb']:
-                word_freq[word_lower] = word_freq.get(word_lower, 0) + 1
-        
-        # Sortiere nach Häufigkeit und wähle die relevantesten Wörter
-        sorted_words = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)
-        relevant_words = [word.title() for word, freq in sorted_words[:20]]
-        
-        # Erstelle 10 Fragen basierend auf dem Video-Inhalt
         questions = []
         
-        # Frage 1: Hauptthema
-        if len(relevant_words) >= 4:
-            theme_options = [relevant_words[0], relevant_words[1], relevant_words[2], "Anderes Thema"]
-        else:
-            theme_options = ["Hauptthema", "Nebenthema", "Unterthema", "Anderes"]
+        main_topic = self._identify_main_topic(sentences, key_terms)
+        questions.append(self._create_topic_question(main_topic, key_terms))
         
-        questions.append({
-            "question_title": f"Was ist das Hauptthema des Videos '{video_title}'?",
-            "question_options": theme_options,
-            "answer": theme_options[0]
-        })
+        if len(key_terms) >= 4:
+            questions.append(self._create_key_term_question(key_terms))
         
-        # Frage 2: Anzahl Wörter
-        word_count = len(transcript.split())
-        questions.append({
-            "question_title": "Wie viele Wörter enthält das Transkript?",
-            "question_options": [
-                str(word_count),
-                str(word_count + 50),
-                str(word_count - 50), 
-                str(word_count + 100)
-            ],
-            "answer": str(word_count)
-        })
+
+        for i, fact in enumerate(facts[:4]):
+            if fact:
+                questions.append(self._create_fact_question(fact, key_terms))
+
+        numbers = self._extract_numbers(transcript)
+        if numbers:
+            questions.append(self._create_number_question(numbers, transcript))
         
-        # Frage 3: Video-Typ
-        video_type = self._determine_video_type(video_title, transcript)
-        questions.append({
-            "question_title": "Welche Art von Video ist das?",
-            "question_options": [
-                video_type,
-                "Entertainment",
-                "Nachrichten",
-                "Werbung"
-            ],
-            "answer": video_type
-        })
+        questions.append(self._create_video_detail_question(video_title, transcript))
         
-        # Frage 4: Transkript-Länge
-        char_count = len(transcript)
-        questions.append({
-            "question_title": "Wie lang ist das Transkript?",
-            "question_options": [
-                f"{char_count} Zeichen",
-                f"{char_count + 1000} Zeichen",
-                f"{char_count - 1000} Zeichen",
-                f"{char_count + 500} Zeichen"
-            ],
-            "answer": f"{char_count} Zeichen"
-        })
+        questions.append(self._create_summary_question(transcript, key_terms))
         
-        # Frage 5: Häufigstes Wort
-        if relevant_words:
-            most_common = relevant_words[0]
-            questions.append({
-                "question_title": "Welches Wort kommt im Transkript am häufigsten vor?",
-                "question_options": [
-                    most_common,
-                    relevant_words[1] if len(relevant_words) > 1 else "Wort B",
-                    relevant_words[2] if len(relevant_words) > 2 else "Wort C",
-                    relevant_words[3] if len(relevant_words) > 3 else "Wort D"
-                ],
-                "answer": most_common
-            })
-        else:
-            questions.append({
-                "question_title": "Wie viele verschiedene Wörter enthält das Transkript?",
-                "question_options": [
-                    str(len(set(words))),
-                    str(len(set(words)) + 100),
-                    str(len(set(words)) - 100),
-                    str(len(set(words)) + 200)
-                ],
-                "answer": str(len(set(words)))
-            })
+        while len(questions) < 10:
+            questions.append(self._create_generic_question(key_terms, len(questions) + 1))
         
-        # Frage 6: Video-Dauer (geschätzt)
-        estimated_duration = len(words) // 150  # Geschätzte Wörter pro Minute
-        questions.append({
-            "question_title": "Wie lang ist das Video ungefähr (basierend auf dem Transkript)?",
-            "question_options": [
-                f"{estimated_duration} Minuten",
-                f"{estimated_duration + 2} Minuten",
-                f"{estimated_duration - 2} Minuten",
-                f"{estimated_duration + 5} Minuten"
-            ],
-            "answer": f"{estimated_duration} Minuten"
-        })
+        questions = questions[:10]
         
-        # Frage 7: Sprache
-        german_words = len([w for w in words if any(c in w for c in 'äöüß')])
-        if german_words > len(words) * 0.1:
-            language = "Deutsch"
-        else:
-            language = "Englisch"
-        
-        questions.append({
-            "question_title": "In welcher Sprache ist das Video hauptsächlich?",
-            "question_options": [
-                language,
-                "Spanisch" if language != "Spanisch" else "Französisch",
-                "Französisch" if language != "Französisch" else "Italienisch",
-                "Italienisch" if language != "Italienisch" else "Deutsch"
-            ],
-            "answer": language
-        })
-        
-        # Frage 8: Komplexität
-        avg_word_length = sum(len(word) for word in words) / len(words) if words else 0
-        if avg_word_length > 8:
-            complexity = "Komplex"
-        elif avg_word_length > 6:
-            complexity = "Mittel"
-        else:
-            complexity = "Einfach"
-        
-        questions.append({
-            "question_title": "Wie komplex ist die Sprache im Video?",
-            "question_options": [
-                complexity,
-                "Sehr einfach",
-                "Mittel",
-                "Sehr komplex"
-            ],
-            "answer": complexity
-        })
-        
-        # Frage 9: Themenvielfalt
-        unique_topics = len(set(word.lower() for word in words if len(word) > 5))
-        if unique_topics > 100:
-            variety = "Hoch"
-        elif unique_topics > 50:
-            variety = "Mittel"
-        else:
-            variety = "Niedrig"
-        
-        questions.append({
-            "question_title": "Wie vielfältig sind die Themen im Video?",
-            "question_options": [
-                variety,
-                "Sehr niedrig",
-                "Mittel",
-                "Sehr hoch"
-            ],
-            "answer": variety
-        })
-        
-        # Frage 10: Zusammenfassung
-        sample_text = transcript[:100] + "..." if len(transcript) > 100 else transcript
-        questions.append({
-            "question_title": "Was wird im Video hauptsächlich besprochen?",
-            "question_options": [
-                sample_text,
-                "Ein anderes Thema",
-                "Nichts Relevantes",
-                "Etwas anderes"
-            ],
-            "answer": sample_text
-        })
+        if len(questions) != 10:
+            raise Exception(f"Fehler: Es wurden {len(questions)} Fragen generiert, aber 10 sind erforderlich!")
         
         return {
             "title": f"Quiz: {video_title}",
             "description": f"Ein Quiz basierend auf dem Video '{video_title}'",
             "questions": questions
+        }
+    
+    def _split_into_sentences(self, text):
+        """Teilt Text in Sätze auf"""
+        import re
+        sentences = re.split(r'[.!?]+', text)
+        return [s.strip() for s in sentences if s.strip()]
+    
+    def _extract_key_terms(self, text):
+        """Extrahiert wichtige Begriffe aus dem Text"""
+        import re
+        words = re.findall(r'\b[A-Za-zäöüßÄÖÜ]{4,}\b', text.lower())
+        
+        stop_words = {
+            'das', 'die', 'der', 'und', 'ist', 'ein', 'eine', 'den', 'von', 'mit', 'für', 'auf', 'an', 'in', 'zu', 'bei', 'seit', 'aus', 'nach', 'über', 'unter', 'zwischen', 'durch', 'ohne', 'gegen', 'um', 'vor', 'hinter', 'neben', 'innerhalb', 'außerhalb', 'dass', 'nicht', 'oder', 'aber', 'wenn', 'wie', 'was', 'wer', 'wo', 'warum', 'wann', 'alle', 'viele', 'mehr', 'sehr', 'auch', 'noch', 'nur', 'schon', 'immer', 'kann', 'muss', 'soll', 'will', 'haben', 'sein', 'werden', 'können', 'müssen', 'sollen', 'wollen', 'haben', 'sind', 'wird', 'kann', 'muss', 'soll', 'will'
+        }
+        
+        word_freq = {}
+        for word in words:
+            if word not in stop_words and len(word) > 3:
+                word_freq[word] = word_freq.get(word, 0) + 1
+        
+        sorted_words = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)
+        return [word.title() for word, freq in sorted_words[:15]]
+    
+    def _extract_facts(self, sentences):
+        """Extrahiert Fakten aus Sätzen"""
+        facts = []
+        for sentence in sentences:
+            if len(sentence) > 20 and any(word in sentence.lower() for word in ['ist', 'sind', 'war', 'waren', 'hat', 'haben', 'kann', 'können', 'muss', 'müssen']):
+                facts.append(sentence)
+        return facts[:5]
+    
+    def _identify_main_topic(self, sentences, key_terms):
+        """Identifiziert das Hauptthema des Videos"""
+        if key_terms:
+            return key_terms[0]
+        return "Allgemeines Thema"
+    
+    def _extract_numbers(self, text):
+        """Extrahiert Zahlen aus dem Text"""
+        import re
+        numbers = re.findall(r'\b\d+\b', text)
+        return [int(n) for n in numbers if int(n) > 0]
+    
+    def _create_topic_question(self, main_topic, key_terms):
+        """Erstellt eine Frage zum Hauptthema"""
+        options = [main_topic]
+        if len(key_terms) >= 3:
+            options.extend(key_terms[1:3])
+        else:
+            options.extend(["Anderes Thema", "Unbekanntes Thema"])
+        
+        # Füge eine falsche Option hinzu
+        options.append("Komplett anderes Thema")
+        
+        return {
+            "question_title": "Was ist das Hauptthema dieses Videos?",
+            "question_options": options[:4],
+            "answer": main_topic
+        }
+    
+    def _create_key_term_question(self, key_terms):
+        """Erstellt eine Frage zu wichtigen Begriffen"""
+        if len(key_terms) < 4:
+            return self._create_generic_question(key_terms, 1)
+        
+        correct_term = key_terms[0]
+        wrong_terms = key_terms[1:4]
+        
+        return {
+            "question_title": f"Welcher Begriff wird im Video am häufigsten erwähnt?",
+            "question_options": [correct_term] + wrong_terms,
+            "answer": correct_term
+        }
+    
+    def _create_fact_question(self, fact, key_terms):
+        """Erstellt eine Frage basierend auf einem Fakt"""
+        # Vereinfache den Fakt für die Frage
+        fact_words = fact.split()[:8]  # Erste 8 Wörter
+        question_text = " ".join(fact_words) + "..."
+        
+        options = [
+            "Richtig",
+            "Falsch", 
+            "Teilweise richtig",
+            "Nicht erwähnt"
+        ]
+        
+        return {
+            "question_title": f"Wird folgendes im Video erwähnt: '{question_text}'?",
+            "question_options": options,
+            "answer": "Richtig"
+        }
+    
+    def _create_number_question(self, numbers, transcript):
+        """Erstellt eine Frage zu Zahlen im Video"""
+        if not numbers:
+            return self._create_generic_question([], 1)
+        
+        correct_number = numbers[0]
+        wrong_numbers = [correct_number + 1, correct_number - 1, correct_number + 10]
+        
+        return {
+            "question_title": "Welche Zahl wird im Video erwähnt?",
+            "question_options": [str(correct_number)] + [str(n) for n in wrong_numbers],
+            "answer": str(correct_number)
+        }
+    
+    def _create_video_detail_question(self, video_title, transcript):
+        """Erstellt eine Frage zu Video-Details"""
+        word_count = len(transcript.split())
+        estimated_duration = word_count // 150  # Geschätzte Minuten
+        
+        options = [
+            f"Etwa {estimated_duration} Minuten",
+            f"Etwa {estimated_duration + 2} Minuten", 
+            f"Etwa {estimated_duration - 2} Minuten",
+            f"Etwa {estimated_duration + 5} Minuten"
+        ]
+        
+        return {
+            "question_title": "Wie lang ist das Video ungefähr?",
+            "question_options": options,
+            "answer": f"Etwa {estimated_duration} Minuten"
+        }
+    
+    def _create_summary_question(self, transcript, key_terms):
+        """Erstellt eine Zusammenfassungsfrage"""
+        # Erste 50 Wörter als Zusammenfassung
+        summary_words = transcript.split()[:50]
+        summary = " ".join(summary_words) + "..."
+        
+        options = [
+            summary,
+            "Ein anderes Thema",
+            "Nichts Relevantes", 
+            "Etwas anderes"
+        ]
+        
+        return {
+            "question_title": "Was wird im Video hauptsächlich besprochen?",
+            "question_options": options,
+            "answer": summary
+        }
+    
+    def _create_generic_question(self, key_terms, question_num):
+        """Erstellt eine generische Frage als Fallback"""
+        if key_terms:
+            correct = key_terms[0] if key_terms else "Begriff A"
+            wrong = key_terms[1:3] if len(key_terms) > 2 else ["Begriff B", "Begriff C"]
+        else:
+            correct = "Option A"
+            wrong = ["Option B", "Option C"]
+        
+        options = [correct] + wrong + ["Andere Option"]
+        
+        return {
+            "question_title": f"Frage {question_num}: Welche Option ist korrekt?",
+            "question_options": options[:4],
+            "answer": correct
         }
     
     def _determine_video_type(self, video_title, transcript):
@@ -345,14 +495,22 @@ class QuizGenerationService:
             audio_path, video_title = self._download_youtube_audio(youtube_url, temp_dir)
             transcript = self._transcribe_audio(audio_path)
             
+            print(f"DEBUG: Video-Titel: {video_title}")
+            print(f"DEBUG: Transkript-Länge: {len(transcript)} Zeichen")
+            print(f"DEBUG: Gemini API-Key verfügbar: {bool(self.gemini_api_key)}")
+            
             if self.gemini_api_key:
+                print("DEBUG: Verwende Gemini API für Quiz-Generierung")
                 quiz_data = self._generate_quiz_with_gemini(video_title, transcript)
             else:
+                print("DEBUG: Verwende Fallback-Methode für Quiz-Generierung")
                 quiz_data = self._generate_test_quiz(video_title, transcript)
             
+            print(f"DEBUG: Generierte Fragen: {len(quiz_data.get('questions', []))}")
             return quiz_data
             
         except Exception as e:
+            print(f"DEBUG: Fehler in generate_quiz_from_youtube: {str(e)}")
             raise Exception(f"Fehler in generate_quiz_from_youtube: {str(e)}")
         finally:
             if temp_dir:
