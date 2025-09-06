@@ -1,6 +1,9 @@
 import os
 import tempfile
 import json
+import re
+import time
+import shutil
 import whisper
 import yt_dlp
 from django.conf import settings
@@ -14,78 +17,99 @@ class QuizGenerationService:
         """Creates a temporary directory for file operations"""
         return tempfile.mkdtemp()
     
+    def _get_download_formats(self):
+        """Returns list of download formats to try"""
+        return [
+            'worstaudio',
+            'bestaudio[ext=m4a]',
+            'bestaudio[ext=webm]',
+            'bestaudio',
+            'worst[ext=mp4]',
+            'worst'
+        ]
+    
+    def _create_ydl_options(self, format_choice, temp_dir):
+        """Creates yt-dlp options for download"""
+        ydl_opts = {
+            'format': format_choice,
+            'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
+            'noplaylist': True,
+            'ignoreerrors': True,
+            'no_warnings': True,
+            'extract_flat': False,
+            'socket_timeout': 30,
+            'retries': 2,
+            'fragment_retries': 2,
+        }
+        
+        if 'audio' in format_choice:
+            ydl_opts['postprocessors'] = [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '64',
+            }]
+        
+        return ydl_opts
+    
+    def _find_audio_files(self, temp_dir):
+        """Finds audio files in temporary directory"""
+        audio_extensions = ('.mp3', '.m4a', '.webm', '.ogg', '.wav', '.mp4')
+        return [file for file in os.listdir(temp_dir) 
+                if file.endswith(audio_extensions)]
+    
+    def _try_download_format(self, youtube_url, format_choice, temp_dir):
+        """Attempts download with specific format"""
+        try:
+            ydl_opts = self._create_ydl_options(format_choice, temp_dir)
+            
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(youtube_url, download=True)
+                if info is None:
+                    return None, None
+                
+                video_title = info.get('title', 'Unknown Video')
+                audio_files = self._find_audio_files(temp_dir)
+                
+                if audio_files:
+                    audio_path = os.path.join(temp_dir, audio_files[0])
+                    return audio_path, video_title
+                
+                return None, None
+                
+        except Exception:
+            return None, None
+    
     def _download_youtube_audio(self, youtube_url, temp_dir):
         """Robust YouTube download with multiple format fallbacks"""
-        try:
-            formats_to_try = [
-                'worstaudio',
-                'bestaudio[ext=m4a]',
-                'bestaudio[ext=webm]',
-                'bestaudio',
-                'worst[ext=mp4]',
-                'worst'
-            ]
+        formats_to_try = self._get_download_formats()
+        
+        for format_choice in formats_to_try:
+            audio_path, video_title = self._try_download_format(
+                youtube_url, format_choice, temp_dir)
             
-            for format_choice in formats_to_try:
-                try:
-                    ydl_opts = {
-                        'format': format_choice,
-                        'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
-                        'noplaylist': True,
-                        'ignoreerrors': True,
-                        'no_warnings': True,
-                        'extract_flat': False,
-                        'socket_timeout': 30,
-                        'retries': 2,
-                        'fragment_retries': 2,
-                    }
-                    
-                    if 'audio' in format_choice:
-                        ydl_opts['postprocessors'] = [{
-                            'key': 'FFmpegExtractAudio',
-                            'preferredcodec': 'mp3',
-                            'preferredquality': '64',
-                        }]
-                    
-                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                        info = ydl.extract_info(youtube_url, download=True)
-                        if info is None:
-                            continue
-                        
-                        video_title = info.get('title', 'Unknown Video')
-                        
-                        audio_files = []
-                        for file in os.listdir(temp_dir):
-                            if file.endswith(('.mp3', '.m4a', '.webm', '.ogg', '.wav', '.mp4')):
-                                audio_files.append(file)
-                        
-                        if audio_files:
-                            audio_path = os.path.join(temp_dir, audio_files[0])
-                            return audio_path, video_title
-                        else:
-                            continue
-                            
-                except Exception as e:
-                    continue
-            
-            raise Exception("All download formats failed")
-                
-        except Exception as e:
-            raise Exception(f"Download failed: {str(e)}")
+            if audio_path and video_title:
+                return audio_path, video_title
+        
+        raise Exception("All download formats failed")
+    
+    def _validate_audio_file(self, audio_path):
+        """Validates audio file exists and is not empty"""
+        if not os.path.exists(audio_path):
+            raise Exception(f"Audio file not found: {audio_path}")
+        
+        if os.path.getsize(audio_path) == 0:
+            raise Exception("Audio file is empty")
+    
+    def _load_whisper_model(self):
+        """Loads Whisper model if not already loaded"""
+        if not self.whisper_model:
+            self.whisper_model = whisper.load_model("tiny")
     
     def _transcribe_audio(self, audio_path):
         """Simple audio transcription using Whisper"""
         try:
-            if not os.path.exists(audio_path):
-                raise Exception(f"Audio file not found: {audio_path}")
-            
-            file_size = os.path.getsize(audio_path)
-            
-            if file_size == 0:
-                raise Exception("Audio file is empty")
-            
-            if not self.whisper_model:
-                self.whisper_model = whisper.load_model("tiny")
+            self._validate_audio_file(audio_path)
+            self._load_whisper_model()
             
             result = self.whisper_model.transcribe(
                 audio_path,
@@ -95,27 +119,19 @@ class QuizGenerationService:
                 language="de"
             )
             
-            transcript = result["text"].strip()
-            return transcript
+            return result["text"].strip()
             
         except Exception as e:
             raise Exception(f"Transcription failed: {str(e)}")
     
-    def _generate_quiz_with_gemini(self, video_title, transcript):
-        """Intelligent quiz generation using Gemini AI"""
-        try:
-            if not self.gemini_api_key:
-                return self._generate_gemini_style_fallback(video_title, transcript)
-            
-            if self.gemini_api_key == "AIzaSyDummyKeyForTesting":
-                return self._generate_gemini_style_fallback(video_title, transcript)
-            
-            import google.generativeai as genai
-            
-            genai.configure(api_key=self.gemini_api_key)
-            model = genai.GenerativeModel('gemini-1.5-flash')
-            
-            prompt = f"""
+    def _is_dummy_api_key(self):
+        """Checks if API key is dummy key"""
+        return (not self.gemini_api_key or 
+                self.gemini_api_key == "AIzaSyDummyKeyForTesting")
+    
+    def _create_gemini_prompt(self, video_title, transcript):
+        """Creates prompt for Gemini AI"""
+        return f"""
 Create a quiz with 10 questions based on the following video transcript.
 
 VIDEO TITLE: {video_title}
@@ -157,10 +173,24 @@ IMPORTANT:
 - Use only information from the transcript
 - Respond ONLY with the JSON, no additional explanations
 """
-
-            response = model.generate_content(prompt)
-            response_text = response.text.strip()
+    
+    def _call_gemini_api(self, prompt):
+        """Calls Gemini API with prompt"""
+        import google.generativeai as genai
+        
+        genai.configure(api_key=self.gemini_api_key)
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        response = model.generate_content(prompt)
+        return response.text.strip()
+    
+    def _generate_quiz_with_gemini(self, video_title, transcript):
+        """Intelligent quiz generation using Gemini AI"""
+        try:
+            if self._is_dummy_api_key():
+                return self._generate_gemini_style_fallback(video_title, transcript)
             
+            prompt = self._create_gemini_prompt(video_title, transcript)
+            response_text = self._call_gemini_api(prompt)
             quiz_data = self._extract_json_from_response(response_text)
             
             if not self._validate_quiz_data(quiz_data):
@@ -168,15 +198,12 @@ IMPORTANT:
             
             return quiz_data
             
-        except Exception as e:
+        except Exception:
             return self._generate_gemini_style_fallback(video_title, transcript)
     
     def _extract_json_from_response(self, response_text):
         """Extracts JSON from Gemini response"""
         try:
-            import re
-            import json
-            
             json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
             if json_match:
                 json_str = json_match.group(0)
@@ -184,7 +211,7 @@ IMPORTANT:
             else:
                 return json.loads(response_text)
                 
-        except Exception as e:
+        except Exception:
             raise Exception("Invalid Gemini response")
     
     def _validate_quiz_data(self, quiz_data):
@@ -201,15 +228,7 @@ IMPORTANT:
                 return False
             
             for question in questions:
-                if not isinstance(question, dict):
-                    return False
-                if 'question_title' not in question:
-                    return False
-                if 'question_options' not in question:
-                    return False
-                if 'answer' not in question:
-                    return False
-                if not isinstance(question['question_options'], list) or len(question['question_options']) != 4:
+                if not self._validate_question_structure(question):
                     return False
             
             return True
@@ -217,20 +236,35 @@ IMPORTANT:
         except Exception:
             return False
     
+    def _validate_question_structure(self, question):
+        """Validates individual question structure"""
+        if not isinstance(question, dict):
+            return False
+        
+        required_fields = ['question_title', 'question_options', 'answer']
+        for field in required_fields:
+            if field not in question:
+                return False
+        
+        options = question['question_options']
+        return (isinstance(options, list) and len(options) == 4)
+    
+    def _get_question_generators(self):
+        """Returns list of question generator functions"""
+        return [
+            self._create_comprehension_question,
+            self._create_analysis_question,
+            self._create_application_question,
+            self._create_evaluation_question,
+            self._create_synthesis_question
+        ]
+    
     def _generate_gemini_style_fallback(self, video_title, transcript):
         """Generates Gemini-like intelligent questions without API"""
         try:
             analysis = self._analyze_transcript_intelligently(transcript)
-            
             questions = []
-            
-            question_generators = [
-                self._create_comprehension_question,
-                self._create_analysis_question,
-                self._create_application_question,
-                self._create_evaluation_question,
-                self._create_synthesis_question
-            ]
+            question_generators = self._get_question_generators()
             
             for i in range(10):
                 generator = question_generators[i % len(question_generators)]
@@ -238,22 +272,18 @@ IMPORTANT:
                 if question:
                     questions.append(question)
             
-            quiz_data = {
+            return {
                 'title': f'Quiz: {video_title}',
                 'description': f'An intelligent quiz based on the video "{video_title}"',
                 'questions': questions[:10]
             }
             
-            return quiz_data
-            
-        except Exception as e:
+        except Exception:
             return self._generate_gemini_style_fallback(video_title, transcript)
     
-    def _analyze_transcript_intelligently(self, transcript):
-        """Analyzes transcript intelligently for better questions"""
-        import re
-        
-        analysis = {
+    def _get_analysis_categories(self):
+        """Returns analysis categories for transcript"""
+        return {
             'main_topics': [],
             'key_arguments': [],
             'statistics': [],
@@ -261,153 +291,166 @@ IMPORTANT:
             'conclusions': [],
             'examples': []
         }
-        
+    
+    def _get_keyword_mappings(self):
+        """Returns keyword mappings for transcript analysis"""
+        return {
+            'main_topics': ['haupt', 'wichtig', 'zentral', 'kern'],
+            'key_arguments': ['argument', 'behaupt', 'sagt', 'meint', 'glaubt'],
+            'statistics': r'\d+(?:\.\d+)?(?:%|prozent|jahre?|monate?|tage?)',
+            'comparisons': ['vergleich', 'anders', 'ähnlich', 'mehr', 'weniger', 'besser', 'schlechter'],
+            'conclusions': ['schluss', 'folgerung', 'fazit', 'zusammenfassung', 'daher', 'deshalb'],
+            'examples': ['beispiel', 'etwa', 'zum beispiel', 'wie', 'etwa']
+        }
+    
+    def _categorize_sentence(self, sentence, sentence_lower, analysis, mappings):
+        """Categorizes sentence into analysis categories"""
+        if any(word in sentence_lower for word in mappings['main_topics']):
+            analysis['main_topics'].append(sentence)
+        elif any(word in sentence_lower for word in mappings['key_arguments']):
+            analysis['key_arguments'].append(sentence)
+        elif re.search(mappings['statistics'], sentence_lower):
+            analysis['statistics'].append(sentence)
+        elif any(word in sentence_lower for word in mappings['comparisons']):
+            analysis['comparisons'].append(sentence)
+        elif any(word in sentence_lower for word in mappings['conclusions']):
+            analysis['conclusions'].append(sentence)
+        elif any(word in sentence_lower for word in mappings['examples']):
+            analysis['examples'].append(sentence)
+    
+    def _analyze_transcript_intelligently(self, transcript):
+        """Analyzes transcript intelligently for better questions"""
+        analysis = self._get_analysis_categories()
+        mappings = self._get_keyword_mappings()
         sentences = transcript.split('. ')
         
         for sentence in sentences:
             sentence = sentence.strip()
             if len(sentence) > 20:
                 sentence_lower = sentence.lower()
-                
-                if any(word in sentence_lower for word in ['haupt', 'wichtig', 'zentral', 'kern']):
-                    analysis['main_topics'].append(sentence)
-                
-                elif any(word in sentence_lower for word in ['argument', 'behaupt', 'sagt', 'meint', 'glaubt']):
-                    analysis['key_arguments'].append(sentence)
-                
-                elif re.search(r'\d+(?:\.\d+)?(?:%|prozent|jahre?|monate?|tage?)', sentence_lower):
-                    analysis['statistics'].append(sentence)
-                
-                elif any(word in sentence_lower for word in ['vergleich', 'anders', 'ähnlich', 'mehr', 'weniger', 'besser', 'schlechter']):
-                    analysis['comparisons'].append(sentence)
-                
-                elif any(word in sentence_lower for word in ['schluss', 'folgerung', 'fazit', 'zusammenfassung', 'daher', 'deshalb']):
-                    analysis['conclusions'].append(sentence)
-                
-                elif any(word in sentence_lower for word in ['beispiel', 'etwa', 'zum beispiel', 'wie', 'etwa']):
-                    analysis['examples'].append(sentence)
+                self._categorize_sentence(sentence, sentence_lower, analysis, mappings)
         
         return analysis
     
+    def _create_answer_preview(self, text, max_words=8):
+        """Creates answer preview from text"""
+        words = text.split()[:max_words]
+        return ' '.join(words) + "..." if len(words) == max_words else text
+    
+    def _create_question_options(self, answer_preview, wrong_answers):
+        """Creates question options list"""
+        return [answer_preview] + wrong_answers
+    
     def _create_comprehension_question(self, analysis, video_title, question_num):
         """Creates specific comprehension questions based on video content"""
-        if analysis['main_topics']:
-            topic = analysis['main_topics'][0]
-            topic_words = topic.split()[:8]
-            answer_preview = ' '.join(topic_words) + "..."
-            
-            return {
-                'question_title': f"What is said about the main topic in this video?",
-                'question_options': [
-                    answer_preview,
-                    "Something else is said",
-                    "The topic is not mentioned",
-                    "There is no clear main topic"
-                ],
-                'answer': answer_preview
-            }
-        return None
+        if not analysis['main_topics']:
+            return None
+        
+        topic = analysis['main_topics'][0]
+        answer_preview = self._create_answer_preview(topic)
+        wrong_answers = [
+            "Something else is said",
+            "The topic is not mentioned",
+            "There is no clear main topic"
+        ]
+        
+        return {
+            'question_title': "What is said about the main topic in this video?",
+            'question_options': self._create_question_options(answer_preview, wrong_answers),
+            'answer': answer_preview
+        }
     
     def _create_analysis_question(self, analysis, video_title, question_num):
         """Creates specific analysis questions based on video content"""
-        if analysis['key_arguments']:
-            argument = analysis['key_arguments'][0]
-            arg_words = argument.split()[:8]
-            answer_preview = ' '.join(arg_words) + "..."
-            
-            return {
-                'question_title': f"What is argued in this video?",
-                'question_options': [
-                    answer_preview,
-                    "A different argument is presented",
-                    "No argument is presented",
-                    "The argument is unclear"
-                ],
-                'answer': answer_preview
-            }
-        return None
+        if not analysis['key_arguments']:
+            return None
+        
+        argument = analysis['key_arguments'][0]
+        answer_preview = self._create_answer_preview(argument)
+        wrong_answers = [
+            "A different argument is presented",
+            "No argument is presented",
+            "The argument is unclear"
+        ]
+        
+        return {
+            'question_title': "What is argued in this video?",
+            'question_options': self._create_question_options(answer_preview, wrong_answers),
+            'answer': answer_preview
+        }
     
     def _create_application_question(self, analysis, video_title, question_num):
         """Creates specific application questions based on video content"""
-        if analysis['examples']:
-            example = analysis['examples'][0]
-            ex_words = example.split()[:8]
-            answer_preview = ' '.join(ex_words) + "..."
-            
-            return {
-                'question_title': f"What concrete example is mentioned in this video?",
-                'question_options': [
-                    answer_preview,
-                    "A different example is mentioned",
-                    "No example is mentioned",
-                    "The example is unclear"
-                ],
-                'answer': answer_preview
-            }
-        return None
+        if not analysis['examples']:
+            return None
+        
+        example = analysis['examples'][0]
+        answer_preview = self._create_answer_preview(example)
+        wrong_answers = [
+            "A different example is mentioned",
+            "No example is mentioned",
+            "The example is unclear"
+        ]
+        
+        return {
+            'question_title': "What concrete example is mentioned in this video?",
+            'question_options': self._create_question_options(answer_preview, wrong_answers),
+            'answer': answer_preview
+        }
     
     def _create_evaluation_question(self, analysis, video_title, question_num):
         """Creates specific evaluation questions based on video content"""
-        if analysis['conclusions']:
-            conclusion = analysis['conclusions'][0]
-            conc_words = conclusion.split()[:8]
-            answer_preview = ' '.join(conc_words) + "..."
-            
-            return {
-                'question_title': f"What concrete conclusion is drawn in this video?",
-                'question_options': [
-                    answer_preview,
-                    "A different conclusion is drawn",
-                    "No conclusion is drawn",
-                    "The conclusion is unclear"
-                ],
-                'answer': answer_preview
-            }
-        return None
+        if not analysis['conclusions']:
+            return None
+        
+        conclusion = analysis['conclusions'][0]
+        answer_preview = self._create_answer_preview(conclusion)
+        wrong_answers = [
+            "A different conclusion is drawn",
+            "No conclusion is drawn",
+            "The conclusion is unclear"
+        ]
+        
+        return {
+            'question_title': "What concrete conclusion is drawn in this video?",
+            'question_options': self._create_question_options(answer_preview, wrong_answers),
+            'answer': answer_preview
+        }
     
     def _create_synthesis_question(self, analysis, video_title, question_num):
         """Creates specific synthesis questions based on video content"""
-        if analysis['comparisons']:
-            comparison = analysis['comparisons'][0]
-            comp_words = comparison.split()[:8]
-            answer_preview = ' '.join(comp_words) + "..."
-            
-            return {
-                'question_title': f"What concrete comparison is made in this video?",
-                'question_options': [
-                    answer_preview,
-                    "A different comparison is made",
-                    "No comparison is made",
-                    "The comparison is unclear"
-                ],
-                'answer': answer_preview
-            }
-        return None
+        if not analysis['comparisons']:
+            return None
+        
+        comparison = analysis['comparisons'][0]
+        answer_preview = self._create_answer_preview(comparison)
+        wrong_answers = [
+            "A different comparison is made",
+            "No comparison is made",
+            "The comparison is unclear"
+        ]
+        
+        return {
+            'question_title': "What concrete comparison is made in this video?",
+            'question_options': self._create_question_options(answer_preview, wrong_answers),
+            'answer': answer_preview
+        }
     
     def _cleanup_temp_files(self, temp_dir):
         """Cleans up temporary files"""
         try:
-            import shutil
             shutil.rmtree(temp_dir)
-        except Exception as e:
+        except Exception:
             pass
     
     def generate_quiz_from_youtube(self, youtube_url):
         """Main method for quiz generation"""
-        import time
-        
         temp_dir = None
         try:
-            start_time = time.time()
-            
             temp_dir = self._create_temp_directory()
-            
             audio_path, video_title = self._download_youtube_audio(youtube_url, temp_dir)
-            
             transcript = self._transcribe_audio(audio_path)
-            
             quiz_data = self._generate_quiz_with_gemini(video_title, transcript)
-            
             return quiz_data
             
         except Exception as e:

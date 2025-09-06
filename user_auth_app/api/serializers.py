@@ -4,6 +4,7 @@ from django.contrib.auth.password_validation import validate_password
 
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
+    """Serializer for user registration with password confirmation"""
     password2 = serializers.CharField(write_only=True)
     
     class Meta:
@@ -13,18 +14,33 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             'password': {'write_only': True}
         }
     
-    def validate(self, attrs):
-        if attrs['password'] != attrs['password2']:
+    def _validate_password_match(self, password, password2):
+        """Validates that passwords match"""
+        if password != password2:
             raise serializers.ValidationError("Passwörter stimmen nicht überein.")
+    
+    def validate(self, attrs):
+        """Validates registration data"""
+        password = attrs['password']
+        password2 = attrs['password2']
+        self._validate_password_match(password, password2)
         return attrs
     
-    def create(self, validated_data):
+    def _remove_password2_from_data(self, validated_data):
+        """Removes password2 from validated data"""
         validated_data.pop('password2')
+        return validated_data
+    
+    def create(self, validated_data):
+        """Creates new user"""
+        validated_data = self._remove_password2_from_data(validated_data)
         user = User.objects.create_user(**validated_data)
         return user
 
 
 class UserSerializer(serializers.ModelSerializer):
+    """Serializer for user data"""
+    
     class Meta:
         model = User
         fields = ['id', 'username', 'email', 'first_name', 'last_name']

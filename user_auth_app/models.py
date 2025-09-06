@@ -1,3 +1,4 @@
 from django.db import models
 
-# Create your models here.
+# User authentication models are handled by Django's built-in User model
+# Additional custom user models can be added here if needed
