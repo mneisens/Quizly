@@ -1,11 +1,7 @@
-asgiref==3.9.1
 Django==5.2.5
-django-cors-headers==4.7.0
-django-restframework==0.0.1
 djangorestframework==3.16.1
 djangorestframework_simplejwt==5.5.1
-PyJWT==2.10.1
-sqlparse==0.5.3
-yt-dlp==2025.07.21
-openai-whisper==20250625
+django-cors-headers==4.7.0
+yt-dlp==2025.7.21
+openai-whisper
 google-generativeai==0.8.3

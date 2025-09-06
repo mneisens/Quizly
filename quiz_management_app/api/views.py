@@ -11,7 +11,7 @@ from ..models import Quiz, Question, QuestionOption
 class CreateQuizView(CreateAPIView):
     """View for creating quizzes from YouTube URLs"""
     serializer_class = CreateQuizSerializer
-    permission_classes = [AllowAny] 
+    permission_classes = [IsAuthenticated] 
     
     def _get_youtube_url(self, request_data):
         """Extracts YouTube URL from request data"""
@@ -28,23 +28,9 @@ class CreateQuizView(CreateAPIView):
             response_data["received_data"] = data
         return Response(response_data, status=status_code)
     
-    def _get_or_create_test_user(self):
-        """Gets or creates a test user for quiz creation"""
-        try:
-            user = User.objects.first()
-            if not user:
-                user = self._create_test_user()
-        except Exception:
-            user = self._create_test_user()
-        return user
-    
-    def _create_test_user(self):
-        """Creates a test user"""
-        return User.objects.create_user(
-            username='testuser',
-            email='test@example.com',
-            password='testpass123'
-        )
+    def _get_authenticated_user(self):
+        """Gets the authenticated user from request"""
+        return self.request.user
     
     def _create_quiz_from_data(self, quiz_data, url, user):
         """Creates quiz object from quiz data"""
@@ -97,7 +83,7 @@ class CreateQuizView(CreateAPIView):
             quiz_service = QuizGenerationService()
             quiz_data = quiz_service.generate_quiz_from_youtube(url)
             
-            user = self._get_or_create_test_user()
+            user = self._get_authenticated_user()
             quiz = self._create_quiz_from_data(quiz_data, url, user)
             self._create_questions_for_quiz(quiz, quiz_data['questions'])
             
@@ -115,19 +101,19 @@ class CreateQuizView(CreateAPIView):
 class QuizListView(ListAPIView):
     """View for listing all quizzes"""
     serializer_class = QuizSerializer
-    permission_classes = [AllowAny] 
+    permission_classes = [IsAuthenticated] 
     
     def get_queryset(self):
-        """Returns all quizzes"""
-        return Quiz.objects.all()
+        """Returns quizzes for authenticated user"""
+        return Quiz.objects.filter(created_by=self.request.user)
 
 
 class QuizDetailView(RetrieveUpdateDestroyAPIView):
     """View for quiz detail, update and delete operations"""
     serializer_class = QuizDetailSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
-        """Returns all quizzes"""
-        return Quiz.objects.all()
+        """Returns quizzes for authenticated user"""
+        return Quiz.objects.filter(created_by=self.request.user)
 
