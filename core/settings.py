@@ -164,7 +164,9 @@ SIMPLE_JWT = {
     'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=1),
 }
 
-GEMINI_API_KEY = None 
+# Gemini API Key - Setzen Sie hier Ihren echten API-Key ein
+# Für Tests können Sie einen temporären Key verwenden
+GEMINI_API_KEY = "AIzaSyDh-AnQ8R6zqxyFEkrtAu4OeJQP4TePZrE"  # Ersetzen Sie dies mit Ihrem echten API-Key 
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",

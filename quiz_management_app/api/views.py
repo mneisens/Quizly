@@ -123,3 +123,25 @@ class QuizDetailView(RetrieveUpdateDestroyAPIView):
     
     def get_queryset(self):
         return Quiz.objects.all()
+
+
+class TestSystemView(CreateAPIView):
+    """Test-View um das System zu prüfen"""
+    permission_classes = [AllowAny]
+    
+    def post(self, request, *args, **kwargs):
+        try:
+            quiz_service = QuizGenerationService()
+            result = quiz_service.test_system()
+            
+            return Response({
+                "message": "System-Test abgeschlossen",
+                "status": "success" if result else "failed",
+                "details": "Siehe Backend-Logs für Details"
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response({
+                "message": f"System-Test fehlgeschlagen: {str(e)}",
+                "status": "error"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
