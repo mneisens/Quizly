@@ -19,7 +19,6 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         """Validates registration data"""
         password = attrs['password']
-        # Check both possible field names for password confirmation
         password2 = attrs.get('password2') or attrs.get('confirmed_password')
         
         if not password2:
@@ -30,7 +29,6 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
     
     def create(self, validated_data):
         """Creates new user"""
-        # Remove both possible password confirmation fields
         validated_data.pop('password2', None)
         validated_data.pop('confirmed_password', None)
         user = User.objects.create_user(**validated_data)
