@@ -4,6 +4,30 @@
 ### Voraussetzungen
 - Python 3.8+
 - pip
+- **ffmpeg** (für YouTube-Video-Verarbeitung)
+
+### ffmpeg Installation
+
+**macOS:**
+```bash
+brew install ffmpeg
+```
+
+**Ubuntu/Debian:**
+```bash
+sudo apt update
+sudo apt install ffmpeg
+```
+
+**Windows:**
+1. Download von https://ffmpeg.org/download.html
+2. Entpacken und zu PATH hinzufügen
+3. Oder mit Chocolatey: `choco install ffmpeg`
+
+**Überprüfung:**
+```bash
+ffmpeg -version
+```
 
 ### Installation
 

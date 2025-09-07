@@ -6,12 +6,28 @@ import time
 import shutil
 import whisper
 import yt_dlp
+import subprocess
 from django.conf import settings
 
 class QuizGenerationService:
     def __init__(self):
         self.gemini_api_key = getattr(settings, 'GEMINI_API_KEY', None)
         self.whisper_model = None
+        self._check_ffmpeg()
+    
+    def _check_ffmpeg(self):
+        """Checks if ffmpeg is available"""
+        try:
+            subprocess.run(['ffmpeg', '-version'], 
+                         capture_output=True, check=True, timeout=5)
+        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+            raise Exception(
+                "ffmpeg ist nicht installiert oder nicht im PATH verfügbar. "
+                "Bitte installiere ffmpeg:\n"
+                "• macOS: brew install ffmpeg\n"
+                "• Ubuntu/Debian: sudo apt install ffmpeg\n"
+                "• Windows: https://ffmpeg.org/download.html"
+            )
     
     def _create_temp_directory(self):
         """Creates a temporary directory for file operations"""
@@ -76,7 +92,10 @@ class QuizGenerationService:
                 
                 return None, None
                 
-        except Exception:
+        except Exception as e:
+            error_msg = str(e).lower()
+            if 'ffmpeg' in error_msg or 'ffprobe' in error_msg:
+                raise Exception("ffmpeg ist nicht installiert. Bitte installiere ffmpeg: https://ffmpeg.org/download.html")
             return None, None
     
     def _download_youtube_audio(self, youtube_url, temp_dir):
