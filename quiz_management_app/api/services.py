@@ -7,6 +7,7 @@ import shutil
 import whisper
 import yt_dlp
 import subprocess
+import platform
 from django.conf import settings
 
 class QuizGenerationService:
@@ -17,36 +18,60 @@ class QuizGenerationService:
     
     def _check_ffmpeg(self):
         """Checks if ffmpeg is available"""
+        system = platform.system().lower()
+        
         try:
-            subprocess.run(['ffmpeg', '-version'], 
-                         capture_output=True, check=True, timeout=5)
+            if system == 'windows':
+                subprocess.run(['ffmpeg', '-version'], 
+                             capture_output=True, check=True, timeout=5, shell=True)
+            else:
+                subprocess.run(['ffmpeg', '-version'], 
+                             capture_output=True, check=True, timeout=5)
         except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+            system_name = "Windows" if system == 'windows' else "macOS/Linux"
             raise Exception(
-                "ffmpeg ist nicht installiert oder nicht im PATH verfügbar. "
+                f"ffmpeg ist nicht installiert oder nicht im PATH verfügbar ({system_name}). "
                 "Bitte installiere ffmpeg:\n"
                 "• macOS: brew install ffmpeg\n"
                 "• Ubuntu/Debian: sudo apt install ffmpeg\n"
-                "• Windows: https://ffmpeg.org/download.html"
+                "• Windows: https://ffmpeg.org/download.html\n"
+                "• Windows (Chocolatey): choco install ffmpeg\n"
+                "• Windows (Scoop): scoop install ffmpeg"
             )
     
     def _get_ffmpeg_path(self):
         """Gets the path to ffmpeg binary"""
+        system = platform.system().lower()
+        
         try:
-            result = subprocess.run(['which', 'ffmpeg'], 
-                                  capture_output=True, text=True, check=True)
-            return result.stdout.strip()
+            if system == 'windows':
+                result = subprocess.run(['where', 'ffmpeg'], 
+                                      capture_output=True, text=True, check=True, shell=True)
+                return result.stdout.strip().split('\n')[0]
+            else:
+                result = subprocess.run(['which', 'ffmpeg'], 
+                                      capture_output=True, text=True, check=True)
+                return result.stdout.strip()
         except subprocess.CalledProcessError:
-            fallback_paths = [
-                '/opt/homebrew/bin/ffmpeg',
-                '/usr/local/bin/ffmpeg',    
-                '/usr/bin/ffmpeg',          
-            ]
+            if system == 'windows':
+                fallback_paths = [
+                    'C:\\ffmpeg\\bin\\ffmpeg.exe',
+                    'C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe',
+                    'C:\\Program Files (x86)\\ffmpeg\\bin\\ffmpeg.exe',
+                    'ffmpeg.exe' 
+                ]
+            else:
+                fallback_paths = [
+                    '/opt/homebrew/bin/ffmpeg',
+                    '/usr/local/bin/ffmpeg',    
+                    '/usr/bin/ffmpeg',          
+                ]
             
             for path in fallback_paths:
                 if os.path.exists(path):
                     return path
             
-            return 'ffmpeg' 
+            return 'ffmpeg' if system != 'windows' else 'ffmpeg.exe' 
     
     def _create_temp_directory(self):
         """Creates a temporary directory for file operations"""
