@@ -1,11 +1,20 @@
 from rest_framework import status
-from rest_framework.generics import CreateAPIView, ListAPIView, RetrieveUpdateDestroyAPIView
+from rest_framework.generics import CreateAPIView, ListAPIView, RetrieveUpdateDestroyAPIView, GenericAPIView
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from django.contrib.auth.models import User
-from .serializers import CreateQuizSerializer, QuizSerializer, QuizDetailSerializer
+from .serializers import (
+    CreateQuizSerializer, QuizSerializer, QuizDetailSerializer,
+    QuizPlaySerializer, SubmitAnswerSerializer, QuizEvaluationSerializer
+)
 from .services import QuizGenerationService
-from ..models import Quiz, Question, QuestionOption
+from .quiz_utils import (
+    validate_youtube_url, get_youtube_url_from_data, create_error_response,
+    get_authenticated_user, get_quiz_by_id, get_question_by_id,
+    get_selected_option, get_or_create_quiz_session, get_quiz_session_by_id,
+    get_completed_quiz_session, save_quiz_answer, move_to_next_question
+)
+from ..models import Quiz, Question, QuestionOption, QuizSession, QuizAnswer
 
 
 class CreateQuizView(CreateAPIView):
@@ -13,24 +22,6 @@ class CreateQuizView(CreateAPIView):
     serializer_class = CreateQuizSerializer
     permission_classes = [IsAuthenticated] 
     
-    def _get_youtube_url(self, request_data):
-        """Extracts YouTube URL from request data"""
-        return request_data.get('youtube_url') or request_data.get('url')
-    
-    def _validate_youtube_url(self, url):
-        """Validates if URL is a valid YouTube URL"""
-        return 'youtube.com' in url or 'youtu.be' in url
-    
-    def _create_error_response(self, message, data=None, status_code=status.HTTP_400_BAD_REQUEST):
-        """Creates standardized error response"""
-        response_data = {"detail": message}
-        if data:
-            response_data["received_data"] = data
-        return Response(response_data, status=status_code)
-    
-    def _get_authenticated_user(self):
-        """Gets the authenticated user from request"""
-        return self.request.user
     
     def _create_quiz_from_data(self, quiz_data, url, user):
         """Creates quiz object from quiz data"""
@@ -67,15 +58,15 @@ class CreateQuizView(CreateAPIView):
     def create(self, request, *args, **kwargs):
         """Handles quiz creation from YouTube URL"""
         try:
-            url = self._get_youtube_url(request.data)
+            url = get_youtube_url_from_data(request.data)
             if not url:
-                return self._create_error_response(
+                return create_error_response(
                     "YouTube-URL ist erforderlich.",
                     request.data
                 )
             
-            if not self._validate_youtube_url(url):
-                return self._create_error_response(
+            if not validate_youtube_url(url):
+                return create_error_response(
                     "Ungültige YouTube-URL.",
                     {"received_url": url}
                 )
@@ -83,7 +74,7 @@ class CreateQuizView(CreateAPIView):
             quiz_service = QuizGenerationService()
             quiz_data = quiz_service.generate_quiz_from_youtube(url)
             
-            user = self._get_authenticated_user()
+            user = get_authenticated_user(request)
             quiz = self._create_quiz_from_data(quiz_data, url, user)
             self._create_questions_for_quiz(quiz, quiz_data['questions'])
             
@@ -91,7 +82,7 @@ class CreateQuizView(CreateAPIView):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
             
         except Exception as e:
-            return self._create_error_response(
+            return create_error_response(
                 f"Fehler bei der Quiz-Generierung: {str(e)}",
                 request.data,
                 status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -116,4 +107,134 @@ class QuizDetailView(RetrieveUpdateDestroyAPIView):
     def get_queryset(self):
         """Returns quizzes for authenticated user"""
         return Quiz.objects.filter(created_by=self.request.user)
+    
+    def get_object(self):
+        """Gets quiz object with better error handling for null IDs"""
+        try:
+            pk = self.kwargs.get('pk')
+            if pk is None or pk == 'null' or pk == '' or str(pk).lower() == 'null':
+                return None
+            return super().get_object()
+        except Exception:
+            return None
+    
+    def retrieve(self, request, *args, **kwargs):
+        """Handles quiz retrieval with better error messages"""
+        obj = self.get_object()
+        if obj is None:
+            return Response(
+                {"detail": "Quiz nicht gefunden oder ungültige ID."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        serializer = self.get_serializer(obj)
+        return Response(serializer.data)
+    
+    def update(self, request, *args, **kwargs):
+        """Handles quiz update with better error messages"""
+        obj = self.get_object()
+        if obj is None:
+            return Response(
+                {"detail": "Quiz nicht gefunden oder ungültige ID."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        return super().update(request, *args, **kwargs)
+    
+    def destroy(self, request, *args, **kwargs):
+        """Handles quiz deletion with better error messages"""
+        obj = self.get_object()
+        if obj is None:
+            return Response(
+                {"detail": "Quiz nicht gefunden oder ungültige ID."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        return super().destroy(request, *args, **kwargs)
+
+
+class StartQuizView(GenericAPIView):
+    """View for starting a quiz session"""
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request, quiz_id):
+        """Starts a new quiz session"""
+        if quiz_id is None or quiz_id == 'null' or quiz_id == '' or str(quiz_id).lower() == 'null':
+            return Response(
+                {"detail": "Ungültige Quiz-ID."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        quiz = get_quiz_by_id(quiz_id, request.user)
+        if not quiz:
+            return Response(
+                {"detail": "Quiz nicht gefunden."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        session = get_or_create_quiz_session(quiz, request.user)
+        serializer = QuizPlaySerializer(session)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class SubmitAnswerView(GenericAPIView):
+    """View for submitting quiz answers"""
+    permission_classes = [IsAuthenticated]
+    serializer_class = SubmitAnswerSerializer
+    
+    def post(self, request, session_id):
+        """Submits an answer and moves to next question"""
+        session = get_quiz_session_by_id(session_id, request.user)
+        if not session:
+            return Response(
+                {"detail": "Quiz-Session nicht gefunden."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        if session.is_completed:
+            return Response(
+                {"detail": "Quiz bereits abgeschlossen."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        question = get_question_by_id(serializer.validated_data['question_id'])
+        if not question:
+            return Response(
+                {"detail": "Frage nicht gefunden."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        selected_option = get_selected_option(
+            question, 
+            serializer.validated_data['selected_option_text']
+        )
+        if not selected_option:
+            return Response(
+                {"detail": "Antwortoption nicht gefunden."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        save_quiz_answer(session, question, selected_option)
+        move_to_next_question(session)
+        
+        serializer = QuizPlaySerializer(session)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class QuizEvaluationView(GenericAPIView):
+    """View for quiz evaluation results"""
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request, session_id):
+        """Gets quiz evaluation results"""
+        session = get_completed_quiz_session(session_id, request.user)
+        if not session:
+            return Response(
+                {"detail": "Abgeschlossene Quiz-Session nicht gefunden."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        serializer = QuizEvaluationSerializer(session)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
