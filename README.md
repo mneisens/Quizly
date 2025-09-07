@@ -9,7 +9,7 @@
 
 1. **Repository klonen**
 ```bash
-git clone git@github.com:mneisens/Quizly.git
+git clone https://github.com/mneisens/Quizly.git
 cd Quizly
 ```
 
