@@ -48,7 +48,22 @@ class QuizDetailSerializer(serializers.ModelSerializer):
 
 class CreateQuizSerializer(serializers.Serializer):
     """Serializer for quiz creation input"""
-    youtube_url = serializers.URLField()
+    youtube_url = serializers.URLField(required=False)
+    url = serializers.URLField(required=False)
+    
+    def validate(self, attrs):
+        """Validates that either youtube_url or url is provided"""
+        youtube_url = attrs.get('youtube_url')
+        url = attrs.get('url')
+        
+        if not youtube_url and not url:
+            raise serializers.ValidationError("YouTube URL is required.")
+        
+        # Use whichever field is provided
+        if url:
+            attrs['youtube_url'] = url
+        
+        return attrs
 
 
 class QuizSessionSerializer(serializers.ModelSerializer):
