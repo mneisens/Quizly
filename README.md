@@ -1,12 +1,13 @@
 # Quizly Backend
 
+AI-powered quiz generation from YouTube videos using Django REST Framework.
 
-### Voraussetzungen
+## Prerequisites
 - Python 3.8+
 - pip
-- **ffmpeg** (für YouTube-Video-Verarbeitung)
+- **ffmpeg** (for YouTube video processing)
 
-### ffmpeg Installation
+## ffmpeg Installation
 
 **macOS:**
 ```bash
@@ -20,57 +21,64 @@ sudo apt install ffmpeg
 ```
 
 **Windows:**
-1. Download von https://ffmpeg.org/download.html
-2. Entpacken und zu PATH hinzufügen
-3. Oder mit Chocolatey: `choco install ffmpeg`
+1. Download from https://ffmpeg.org/download.html
+2. Extract and add to PATH
+3. Or with Chocolatey: `choco install ffmpeg`
 
-**Überprüfung:**
+**Verification:**
 ```bash
 ffmpeg -version
 ```
 
-### Installation
+## Installation
 
-1. **Repository klonen**
+1. **Clone repository**
 ```bash
 git clone https://github.com/mneisens/Quizly.git
 cd Quizly
 ```
 
-2. **Virtuelle Umgebung erstellen**
+2. **Create virtual environment**
 ```bash
 python3 -m venv env
 source env/bin/activate  # macOS/Linux
 # env\Scripts\activate   # Windows
 ```
 
-3. **Abhängigkeiten installieren**
+3. **Install dependencies**
 ```bash
 pip install -r requirements.txt
 ```
 
-4. **Datenbank einrichten**
+4. **Setup database**
 ```bash
 python manage.py migrate
 ```
 
-5. **Server starten**
+5. **Start server**
 ```bash
 python manage.py runserver
 ```
 
-Der Server läuft dann unter: `http://localhost:8000`
+The server will run at: `http://localhost:8000`
 
-## API Endpunkte
+## API Endpoints
 
 - **Admin:** `http://localhost:8000/admin/`
 - **API Base:** `http://localhost:8000/api/`
-- **Dokumentation:** Siehe separate API-Dokumentation
+- **Documentation:** See separate API documentation
 
+## Features
+
+- User authentication with JWT tokens
+- YouTube video processing with yt-dlp
+- AI-powered quiz generation using Gemini API
+- Audio transcription with Whisper
+- RESTful API with Django REST Framework
 
 ## Support
 
-Bei Problemen:
-1. Logs prüfen
-2. Django Debug-Toolbar verwenden
-3. Issue im Repository erstellen
+If you encounter issues:
+1. Check logs
+2. Use Django Debug Toolbar
+3. Create an issue in the repository
