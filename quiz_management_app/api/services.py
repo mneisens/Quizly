@@ -29,6 +29,25 @@ class QuizGenerationService:
                 "• Windows: https://ffmpeg.org/download.html"
             )
     
+    def _get_ffmpeg_path(self):
+        """Gets the path to ffmpeg binary"""
+        try:
+            result = subprocess.run(['which', 'ffmpeg'], 
+                                  capture_output=True, text=True, check=True)
+            return result.stdout.strip()
+        except subprocess.CalledProcessError:
+            fallback_paths = [
+                '/opt/homebrew/bin/ffmpeg',
+                '/usr/local/bin/ffmpeg',    
+                '/usr/bin/ffmpeg',          
+            ]
+            
+            for path in fallback_paths:
+                if os.path.exists(path):
+                    return path
+            
+            return 'ffmpeg' 
+    
     def _create_temp_directory(self):
         """Creates a temporary directory for file operations"""
         return tempfile.mkdtemp()
@@ -56,6 +75,7 @@ class QuizGenerationService:
             'socket_timeout': 30,
             'retries': 2,
             'fragment_retries': 2,
+            'ffmpeg_location': self._get_ffmpeg_path(),
         }
         
         if 'audio' in format_choice:
