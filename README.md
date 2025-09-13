@@ -1,84 +1,151 @@
-# Quizly Backend
+# 🐳 Docker Setup Guide für Quizly Backend
 
-AI-powered quiz generation from YouTube videos using Django REST Framework.
+## 🚀 Super einfacher Start
 
-## Prerequisites
-- Python 3.8+
-- pip
-- **ffmpeg** (for YouTube video processing)
+**Für deine Kollegen - nur 3 Schritte:**
 
-## ffmpeg Installation
+### 1. Docker installieren
+- **macOS:** https://www.docker.com/products/docker-desktop
+- **Windows:** https://www.docker.com/products/docker-desktop
+- **Linux:** `sudo apt install docker.io docker-compose`
 
-**macOS:**
+### 2. Projekt starten
 ```bash
-brew install ffmpeg
+git clone <repository-url>
+cd Quizly_Backend
+docker-compose up
 ```
 
-**Ubuntu/Debian:**
+### 3. Fertig!
+- Server läuft auf: `http://localhost:8000`
+- API: `http://localhost:8000/api/`
+
+## ✅ Was Docker automatisch macht
+
+- ✅ **FFmpeg installiert** (keine manuelle Installation nötig)
+- ✅ **Python-Zertifikate konfiguriert** (keine SSL-Fehler)
+- ✅ **Whisper-Modell heruntergeladen** (keine Download-Fehler)
+- ✅ **Alle Dependencies installiert** (requirements.txt)
+- ✅ **Datenbank migriert** (automatisch beim Start)
+- ✅ **Konsistente Umgebung** (funktioniert auf allen Systemen)
+
+## 🔧 Docker-Befehle
+
+### Container starten
 ```bash
-sudo apt update
-sudo apt install ffmpeg
+docker-compose up
 ```
 
-**Windows:**
-1. Download from https://ffmpeg.org/download.html
-2. Extract and add to PATH
-3. Or with Chocolatey: `choco install ffmpeg`
-
-**Verification:**
+### Container im Hintergrund starten
 ```bash
-ffmpeg -version
+docker-compose up -d
 ```
 
-## Installation
-
-1. **Clone repository**
+### Container stoppen
 ```bash
-git clone https://github.com/mneisens/Quizly.git
-cd Quizly
+docker-compose down
 ```
 
-2. **Create virtual environment**
+### Logs anzeigen
 ```bash
-python3 -m venv env
-source env/bin/activate  # macOS/Linux
-# env\Scripts\activate   # Windows
+docker-compose logs -f
 ```
 
-3. **Install dependencies**
+### Container neu bauen (nach Code-Änderungen)
 ```bash
-pip install -r requirements.txt
+docker-compose up --build
 ```
 
-4. **Setup database**
+### In Container einsteigen (für Debugging)
 ```bash
-python manage.py migrate
+docker-compose exec quizly-backend bash
 ```
 
-5. **Start server**
+## 🗂️ Dateien erklärt
+
+### `Dockerfile`
+- Basis-Image: Python 3.11
+- FFmpeg installiert
+- SSL-Zertifikate konfiguriert
+- Whisper-Modell vorab heruntergeladen
+- Django-Server startet automatisch
+
+### `docker-compose.yml`
+- Port 8000 freigegeben
+- Datenbank persistent gespeichert
+- Health-Check für Container-Status
+- Automatischer Neustart bei Fehlern
+
+### `.dockerignore`
+- Optimiert Build-Performance
+- Schließt unnötige Dateien aus
+
+## 🚨 Troubleshooting
+
+### Container startet nicht
 ```bash
-python manage.py runserver
+# Logs prüfen
+docker-compose logs
+
+# Container neu bauen
+docker-compose up --build
 ```
 
-The server will run at: `http://localhost:8000`
+### Port bereits belegt
+```bash
+# Anderen Port verwenden
+docker-compose up -p 8001:8000
+```
 
-## API Endpoints
+### Datenbank-Reset
+```bash
+# Container stoppen und Datenbank löschen
+docker-compose down
+rm db.sqlite3
+docker-compose up
+```
 
-- **Admin:** `http://localhost:8000/admin/`
-- **API Base:** `http://localhost:8000/api/`
-- **Documentation:** See separate API documentation
+### Container komplett zurücksetzen
+```bash
+# Alles löschen und neu starten
+docker-compose down -v
+docker system prune -a
+docker-compose up --build
+```
 
-## Features
+## 📊 Vorteile für dein Team
 
-- User authentication with JWT tokens
-- YouTube video processing with yt-dlp
-- AI-powered quiz generation using Gemini API
-- Audio transcription with Whisper
-- RESTful API with Django REST Framework
+### Für Kollegen:
+- **Keine Setup-Probleme** mehr
+- **Ein Befehl** startet alles
+- **Funktioniert überall** (macOS, Windows, Linux)
+- **Keine SSL-Fehler** oder FFmpeg-Probleme
 
-## Support
+### Für dich:
+- **Weniger Support** nötig
+- **Konsistente Umgebung** für alle
+- **Einfaches Deployment**
+- **Reproduzierbare Tests**
 
-If you encounter issues:
-1. Check logs
-2. Use Django Debug Toolbar
-3. Create an issue in the repository
+## 🎯 Vergleich: Mit vs. Ohne Docker
+
+### Ohne Docker (vorher):
+- FFmpeg installieren
+- Python-Zertifikate fixen
+- Whisper-Modell herunterladen
+- SSL-Probleme lösen
+- PATH-Probleme
+- **→ 20+ Schritte, viele Fehlerquellen**
+
+### Mit Docker (jetzt):
+- Docker installieren
+- `docker-compose up`
+- **→ 2 Schritte, funktioniert immer**
+
+## 🚀 Ready to go!
+
+Deine Kollegen brauchen jetzt nur noch:
+1. Docker installieren
+2. `docker-compose up` ausführen
+
+**Keine FFmpeg-Installation, keine SSL-Probleme, keine Setup-Guides mehr!**
