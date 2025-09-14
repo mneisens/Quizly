@@ -1,8 +1,5 @@
-# 🐳 Docker Setup Guide für Quizly Backend
+#  Docker Setup Guide für Quizly Backend
 
-## 🚀 Super einfacher Start
-
-**Für deine Kollegen - nur 3 Schritte:**
 
 ### 1. Docker installieren
 - **macOS:** https://www.docker.com/products/docker-desktop
@@ -11,8 +8,8 @@
 
 ### 2. Projekt starten
 ```bash
-git clone <repository-url>
-cd Quizly_Backend
+git clone https://github.com/mneisens/Quizly.git
+cd Quizly
 docker-compose up
 ```
 
