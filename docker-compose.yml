@@ -8,7 +8,6 @@ services:
     volumes:
       # Datenbank persistent speichern
       - ./data:/app/data
-      - ./db.sqlite3:/app/db.sqlite3
     environment:
       # SSL-Zertifikate für Python
       - SSL_CERT_FILE=/usr/local/lib/python3.11/site-packages/certifi/cacert.pem
@@ -16,9 +15,3 @@ services:
       - DEBUG=True
       - DJANGO_SETTINGS_MODULE=core.settings
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
